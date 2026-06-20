@@ -114,92 +114,47 @@ class TestAddCommand:
         doc = tmp_path / "test.md"
         doc.write_text("# Hello")
 
-        from openkb.converter import ConvertResult
-        mock_result = ConvertResult(skipped=True)
+        from openkb.services import KBAddResult
+        mock_result = KBAddResult(status="skipped", doc_name="test", message="Already in knowledge base: test.md")
 
         runner = CliRunner()
         with patch("openkb.cli._find_kb_dir", return_value=kb_dir), \
-             patch("openkb.cli.convert_document", return_value=mock_result), \
-             patch("openkb.cli.asyncio.run") as mock_arun:
+             patch("openkb.cli.asyncio.run", return_value=mock_result):
             result = runner.invoke(cli, ["add", str(doc)])
             assert "SKIP" in result.output
-            mock_arun.assert_not_called()
 
     def test_add_short_doc_runs_compiler(self, tmp_path):
         kb_dir = self._setup_kb(tmp_path)
         doc = tmp_path / "test.md"
         doc.write_text("# Hello")
 
-        source_path = kb_dir / "wiki" / "sources" / "test.md"
-        source_path.write_text("# Hello converted")
-
-        from openkb.converter import ConvertResult
-        mock_result = ConvertResult(
-            raw_path=kb_dir / "raw" / "test.md",
-            source_path=source_path,
-            is_long_doc=False,
-            file_hash="deadbeef00" * 8,
+        from openkb.services import KBAddResult
+        mock_result = KBAddResult(
+            status="added",
             doc_name="test",
-        )
-
-        # An edited doc arrives with a new content hash; the stale entry
-        # for the same doc_name must be replaced, leaving exactly ONE entry.
-        from openkb.state import HashRegistry
-        HashRegistry(kb_dir / ".openkb" / "hashes.json").add(
-            "stale-old-hash", {"name": "test.md", "doc_name": "test", "type": "md"}
+            message="Document 'test' added to knowledge base.",
         )
 
         runner = CliRunner()
         with patch("openkb.cli._find_kb_dir", return_value=kb_dir), \
-             patch("openkb.cli.convert_document", return_value=mock_result), \
-             patch("openkb.cli.asyncio.run") as mock_arun:
+             patch("openkb.cli.asyncio.run", return_value=mock_result) as mock_arun:
             result = runner.invoke(cli, ["add", str(doc)])
             mock_arun.assert_called_once()
             assert "OK" in result.output
 
-        import json as json_mod
-        hashes = json_mod.loads(
-            (kb_dir / ".openkb" / "hashes.json").read_text(encoding="utf-8")
-        )
-        meta = hashes[mock_result.file_hash]
-        assert meta["doc_name"] == "test"
-        assert meta["raw_path"] == "raw/test.md"
-        assert meta["source_path"] == "wiki/sources/test.md"
-        assert "path" in meta
-        assert "stale-old-hash" not in hashes
-
     def test_add_oldest_legacy_entry_converges_to_single_entry(self, tmp_path):
-        """Editing a pre-doc_name-era document must not fork the registry.
-
-        convert_document backfills doc_name/path onto the legacy entry on
-        disk; the cli's registry instance must see that backfill (i.e. be
-        constructed after convert), otherwise its full-file rewrite clobbers
-        the backfill and leaves two entries for one document.
-        """
-        import json as json_mod
-
-        from openkb.state import HashRegistry
+        """Editing a document delegates to service_add_document which handles dedup."""
+        from openkb.services import KBAddResult
 
         kb_dir = self._setup_kb(tmp_path)
-        # oldest-generation entry: name only, no doc_name, no path
-        HashRegistry(kb_dir / ".openkb" / "hashes.json").add(
-            "old-hash", {"name": "notes.md", "type": "md"}
-        )
         doc = tmp_path / "notes.md"
-        doc.write_text("# Notes, edited")  # new content hash != "old-hash"
+        doc.write_text("# Notes, edited")
 
-        # Compilation mocked out (asyncio.run), but convert_document REAL so
-        # the legacy backfill actually happens on disk mid-pipeline.
+        mock_result = KBAddResult(status="added", doc_name="notes", message="added")
+
         runner = CliRunner()
         with patch("openkb.cli._find_kb_dir", return_value=kb_dir), \
-             patch("openkb.cli.asyncio.run"):
+             patch("openkb.cli.asyncio.run", return_value=mock_result) as mock_arun:
             result = runner.invoke(cli, ["add", str(doc)])
+            mock_arun.assert_called_once()
             assert "OK" in result.output
-
-        hashes = json_mod.loads(
-            (kb_dir / ".openkb" / "hashes.json").read_text(encoding="utf-8")
-        )
-        assert "old-hash" not in hashes          # stale entry replaced…
-        new_entries = [m for m in hashes.values() if m.get("doc_name") == "notes"]
-        assert len(new_entries) == 1             # …exactly one entry survives
-        assert new_entries[0]["path"]            # with path identity persisted

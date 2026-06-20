@@ -59,7 +59,24 @@ openkb = "openkb.cli:cli"
 testpaths = ["tests"]
 
 [project.optional-dependencies]
-dev = ["pytest==9.0.3", "pytest-asyncio==1.3.0"]
+# API extra — adds FastAPI, ASGI server, and Azure Blob Storage SDK.
+# Installing this extra is required before running `openkb serve`.
+# azure-storage-blob[aio] provides the async BlobServiceClient used by
+# AzureBlobStorageBackend; it also works unchanged against Azurite (local emulator).
+api = [
+    "fastapi==0.137.2",
+    "uvicorn[standard]==0.49.0",
+    "azure-storage-blob[aio]==12.24.0",
+    "pydantic-settings==2.10.1",
+]
+dev = [
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    # httpx is required by FastAPI's async TestClient (httpx.AsyncClient transport)
+    "httpx==0.28.1",
+    # anyio provides async test fixtures and the pytest-anyio plugin
+    "anyio==4.14.0",
+]
 
 [tool.hatch.version]
 source = "vcs"

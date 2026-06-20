@@ -742,16 +742,16 @@ async def _handle_slash(
 
     if head == "/status":
         from openkb.locks import kb_read_lock
-        from openkb.cli import print_status
+        from openkb.cli import _status_kb_and_print
         with kb_read_lock(kb_dir / ".openkb"):
-            print_status(kb_dir)
+            await _status_kb_and_print(kb_dir)
         return None
 
     if head == "/list":
         from openkb.locks import kb_read_lock
-        from openkb.cli import print_list
+        from openkb.cli import _list_kb_and_print
         with kb_read_lock(kb_dir / ".openkb"):
-            print_list(kb_dir)
+            await _list_kb_and_print(kb_dir)
         return None
 
     if head == "/lint":
