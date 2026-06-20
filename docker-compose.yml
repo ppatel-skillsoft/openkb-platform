@@ -1,0 +1,55 @@
+# OpenKB local development stack
+#
+# Uses Azurite (Microsoft's Azure Blob Storage emulator) so the
+# AzureBlobStorageBackend is exercised locally — identical code path to
+# real Azure, different connection string only.
+#
+# Usage:
+#   cp .env.docker .env          # fill in LLM_API_KEY
+#   docker compose up
+#   curl http://localhost:8000/kb/init -d '{"kb_name":"test"}'
+
+services:
+
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: openkb-azurite
+    command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck --loose
+    ports:
+      - "10000:10000"
+    volumes:
+      - azurite_data:/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "10000"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    container_name: openkb-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Azurite connection string — the only local↔production difference.
+      # In real Azure deployment replace with your storage account credentials.
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1"
+      AZURE_KB_CONTAINER: openkb
+    volumes:
+      # Mount host Copilot token so the container can use github_copilot/* models
+      - ~/.config/litellm:/home/openkb/.config/litellm
+    depends_on:
+      azurite:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  azurite_data:

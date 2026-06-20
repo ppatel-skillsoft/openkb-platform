@@ -1,0 +1,28 @@
+# Git
+.git/
+.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+
+# Local dev / secrets
+.env
+.env.local
+uv.lock
+
+# Tests and specs
+tests/
+specs/
+
+# Docs and misc
+*.md
+!README.md
+.DS_Store

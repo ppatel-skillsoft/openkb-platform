@@ -275,9 +275,34 @@ def _clear_existing_skill_dir(kb_dir: Path, name: str) -> None:
 
 
 def add_single_file(file_path: Path, kb_dir: Path) -> Literal["added", "skipped", "failed"]:
-    """Convert, index, and compile a single document under the KB mutation lock."""
-    with kb_ingest_lock(kb_dir / ".openkb"):
-        return _add_single_file_locked(file_path, kb_dir)
+    """Convert, index, and compile a single document. Thin sync wrapper over service_add_document."""
+    from openkb.services import service_add_document, KBNotFoundError, UnsupportedDocumentError, LLMError, OpenKBError
+    from openkb.storage.local import LocalStorageBackend
+
+    kb_name = kb_dir.name
+    click.echo(f"Adding: {file_path.name}")
+    try:
+        result = asyncio.run(
+            service_add_document(LocalStorageBackend(kb_dir), kb_name, str(file_path))
+        )
+        if result.status == "skipped":
+            click.echo(f"  [SKIP] Already in knowledge base: {file_path.name}")
+        else:
+            click.echo(f"  [OK] {file_path.name} added to knowledge base.")
+        return result.status
+    except UnsupportedDocumentError as exc:
+        click.echo(f"  [ERROR] {exc}")
+        return "failed"
+    except LLMError as exc:
+        click.echo(f"  [ERROR] LLM error: {exc.detail}")
+        return "failed"
+    except OpenKBError as exc:
+        click.echo(f"  [ERROR] {exc}")
+        return "failed"
+    except Exception as exc:
+        click.echo(f"  [ERROR] {exc}")
+        logging.getLogger(__name__).debug("add_single_file traceback:", exc_info=True)
+        return "failed"
 
 
 def _add_single_file_locked(file_path: Path, kb_dir: Path) -> Literal["added", "skipped", "failed"]:
@@ -554,7 +579,7 @@ def init(model, language):
         click.echo("Knowledge base already initialized.")
         return
 
-    # Interactive prompts
+    # Interactive prompts (CLI-only — API skips these)
     click.echo("Pick an LLM in `provider/model` LiteLLM format:")
     click.echo("  OpenAI:    gpt-5.4-mini, gpt-5.4")
     click.echo("  Anthropic: anthropic/claude-sonnet-4-6, anthropic/claude-opus-4-6")
@@ -584,27 +609,19 @@ def init(model, language):
         ))
     if not language:
         language = DEFAULT_CONFIG["language"]
-    # Create directory structure
-    Path("raw").mkdir(exist_ok=True)
-    Path("wiki/sources/images").mkdir(parents=True, exist_ok=True)
-    Path("wiki/summaries").mkdir(parents=True, exist_ok=True)
-    Path("wiki/concepts").mkdir(parents=True, exist_ok=True)
-    Path("wiki/entities").mkdir(parents=True, exist_ok=True)
 
-    # Write wiki files
-    atomic_write_text(Path("wiki/AGENTS.md"), AGENTS_MD)
-    atomic_write_text(Path("wiki/index.md"), INDEX_SEED)
-    atomic_write_text(Path("wiki/log.md"), "# Operations Log\n\n")
+    # Delegate filesystem operations to the shared service
+    from openkb.services import service_init_kb
+    from openkb.storage.local import LocalStorageBackend
 
-    # Create .openkb/ state directory
-    openkb_dir.mkdir()
-    config = {
-        "model": model,
-        "language": language,
-        "pageindex_threshold": DEFAULT_CONFIG["pageindex_threshold"],
-    }
-    save_config(openkb_dir / "config.yaml", config)
-    atomic_write_json(openkb_dir / "hashes.json", {})
+    kb_dir = Path.cwd()
+    backend = LocalStorageBackend(kb_dir)
+    kb_name = kb_dir.name
+    try:
+        asyncio.run(service_init_kb(backend, kb_name, model, language))
+    except Exception as exc:
+        click.echo(f"[ERROR] Init failed: {exc}")
+        return
 
     # Write API key to KB-local .env (0600) if the user provided one
     if api_key:
@@ -715,17 +732,31 @@ def query(ctx, question, save, raw):
         return
 
     from openkb.agent.query import run_query
+    from openkb.storage.local import LocalStorageBackend
 
     openkb_dir = kb_dir / ".openkb"
     config = load_config(openkb_dir / "config.yaml")
     _setup_llm_key(kb_dir)
     model: str = config.get("model", DEFAULT_CONFIG["model"])
 
+    # Streaming and raw rendering are CLI-only presentation concerns;
+    # the service layer (service_query_kb) always returns a plain string.
     stream = _stream_to_tty()
     try:
-        answer = asyncio.run(run_query(question, kb_dir, model, stream=stream, raw=raw))
-        if not stream and answer:
-            click.echo(answer)
+        if stream or raw:
+            # Use run_query directly to preserve TTY streaming / raw rendering
+            answer = asyncio.run(run_query(question, kb_dir, model, stream=stream, raw=raw))
+            if not stream and answer:
+                click.echo(answer)
+        else:
+            from openkb.services import service_query_kb
+            backend = LocalStorageBackend(kb_dir)
+            result = asyncio.run(service_query_kb(backend, kb_dir.name, question, save=save))
+            if result.answer:
+                click.echo(result.answer)
+            if result.saved_to:
+                click.echo(f"\nSaved to {kb_dir / result.saved_to}")
+            return
     except Exception as exc:
         click.echo(f"[ERROR] Query failed: {exc}")
         return
@@ -739,10 +770,6 @@ def query(ctx, question, save, raw):
         explore_dir = kb_dir / "wiki" / "explorations"
         explore_dir.mkdir(parents=True, exist_ok=True)
         explore_path = explore_dir / f"{slug}.md"
-        # Strip ghost wikilinks the agent may have emitted to non-existent
-        # concept/summary pages — the schema_md in the agent's instructions
-        # encourages [[wikilinks]] but the agent's view of "which pages
-        # exist" can drift from disk reality.
         known = list_existing_wiki_targets(kb_dir / "wiki")
         cleaned_answer, _ = strip_ghost_wikilinks(answer, known)
         explore_path.write_text(
@@ -1494,67 +1521,49 @@ def lint(ctx, fix):
     asyncio.run(run_lint(kb_dir))
 
 
+async def _list_kb_and_print(kb_dir: Path) -> None:
+    """Async core for list output — used by CLI (via asyncio.run) and chat REPL (await)."""
+    from openkb.services import service_list_kb
+    from openkb.storage.local import LocalStorageBackend
+
+    result = await service_list_kb(LocalStorageBackend(kb_dir), kb_dir.name)
+
+    if not result.documents:
+        click.echo("No documents indexed yet.")
+        return
+
+    doc_count = len(result.documents)
+    click.echo(f"Documents ({doc_count}):")
+    click.echo(f"  {'Name':<40} {'Type':<12}")
+    click.echo(f"  {'-'*40} {'-'*12}")
+    for doc in result.documents:
+        display = _display_type(doc.type)
+        click.echo(f"  {doc.name:<40} {display:<12}")
+
+    if result.summaries:
+        click.echo(f"\nSummaries ({len(result.summaries)}):")
+        for s in result.summaries:
+            click.echo(f"  - {s}")
+
+    if result.concepts:
+        click.echo(f"\nConcepts ({len(result.concepts)}):")
+        for c in result.concepts:
+            click.echo(f"  - {c}")
+
+    if result.entities:
+        click.echo(f"\nEntities ({len(result.entities)}):")
+        for e in result.entities:
+            click.echo(f"  - {e}")
+
+    if result.reports:
+        click.echo(f"\nReports ({len(result.reports)}):")
+        for r in result.reports:
+            click.echo(f"  - {r}")
+
+
 def print_list(kb_dir: Path) -> None:
     """Print all documents in the knowledge base. Usable from CLI and chat REPL."""
-    openkb_dir = kb_dir / ".openkb"
-    hashes_file = openkb_dir / "hashes.json"
-    if not hashes_file.exists():
-        click.echo("No documents indexed yet.")
-        return
-
-    hashes = json.loads(hashes_file.read_text(encoding="utf-8"))
-    if not hashes:
-        click.echo("No documents indexed yet.")
-        return
-
-    # Display documents table with count in header
-    doc_count = len(hashes)
-    click.echo(f"Documents ({doc_count}):")
-    click.echo(f"  {'Name':<40} {'Type':<12} {'Pages':<8}")
-    click.echo(f"  {'-'*40} {'-'*12} {'-'*8}")
-    for file_hash, meta in hashes.items():
-        name = meta.get("name", "unknown")
-        raw_type = meta.get("type", "unknown")
-        display = _display_type(raw_type)
-        pages = meta.get("pages", "")
-        pages_str = str(pages) if pages else ""
-        click.echo(f"  {name:<40} {display:<12} {pages_str:<8}")
-
-    # Display summaries
-    summaries_dir = kb_dir / "wiki" / "summaries"
-    if summaries_dir.exists():
-        summaries = sorted(p.stem for p in summaries_dir.glob("*.md"))
-        if summaries:
-            click.echo(f"\nSummaries ({len(summaries)}):")
-            for s in summaries:
-                click.echo(f"  - {s}")
-
-    # Display concepts
-    concepts_dir = kb_dir / "wiki" / "concepts"
-    if concepts_dir.exists():
-        concepts = sorted(p.stem for p in concepts_dir.glob("*.md"))
-        if concepts:
-            click.echo(f"\nConcepts ({len(concepts)}):")
-            for c in concepts:
-                click.echo(f"  - {c}")
-
-    # Display entities
-    entities_dir = kb_dir / "wiki" / "entities"
-    if entities_dir.exists():
-        entities = sorted(p.stem for p in entities_dir.glob("*.md"))
-        if entities:
-            click.echo(f"\nEntities ({len(entities)}):")
-            for e in entities:
-                click.echo(f"  - {e}")
-
-    # Display reports
-    reports_dir = kb_dir / "wiki" / "reports"
-    if reports_dir.exists():
-        reports = sorted(p.name for p in reports_dir.glob("*.md"))
-        if reports:
-            click.echo(f"\nReports ({len(reports)}):")
-            for r in reports:
-                click.echo(f"  - {r}")
+    asyncio.run(_list_kb_and_print(kb_dir))
 
 
 @cli.command(name="list")
@@ -1569,63 +1578,44 @@ def list_cmd(ctx):
     print_list(kb_dir)
 
 
-def print_status(kb_dir: Path) -> None:
-    """Print knowledge base status. Usable from CLI and chat REPL."""
-    wiki_dir = kb_dir / "wiki"
-    subdirs = ["sources", "summaries", "concepts", "entities", "reports"]
+async def _status_kb_and_print(kb_dir: Path) -> None:
+    """Async core for status output — used by CLI (via asyncio.run) and chat REPL (await)."""
+    from openkb.services import service_status_kb
+    from openkb.storage.local import LocalStorageBackend
 
-    # Print the active KB path as the first line. Agents and scripts
-    # parse this to locate the wiki without assuming cwd == KB root.
+    result = await service_status_kb(LocalStorageBackend(kb_dir), kb_dir.name)
+
     click.echo(f"Knowledge base: {kb_dir}")
     click.echo("")
     click.echo("Knowledge Base Status:")
     click.echo(f"  {'Directory':<20} {'Files':<10}")
     click.echo(f"  {'-'*20} {'-'*10}")
 
-    for subdir in subdirs:
-        path = wiki_dir / subdir
-        if path.exists():
-            count = len(list(path.glob("*.md")))
-        else:
-            count = 0
+    for subdir in ["sources", "summaries", "concepts", "entities", "reports"]:
+        count = result.directory_counts.get(subdir, 0)
         click.echo(f"  {subdir:<20} {count:<10}")
 
-    # Raw files
-    raw_dir = kb_dir / "raw"
-    if raw_dir.exists():
-        raw_count = len([f for f in raw_dir.iterdir() if f.is_file()])
-        click.echo(f"  {'raw':<20} {raw_count:<10}")
+    raw_count = result.directory_counts.get("raw", 0)
+    click.echo(f"  {'raw':<20} {raw_count:<10}")
 
-    # Hash registry summary
-    openkb_dir = kb_dir / ".openkb"
-    hashes_file = openkb_dir / "hashes.json"
-    if hashes_file.exists():
-        hashes = json.loads(hashes_file.read_text(encoding="utf-8"))
-        click.echo(f"\n  Total indexed: {len(hashes)} document(s)")
+    click.echo(f"\n  Total indexed: {result.total_indexed} document(s)")
 
-    # Last compile time: newest compiled page across summaries/, concepts/,
-    # and entities/ (an entity-only compile must still bump the shown time).
-    compiled_pages = [
-        p
-        for sub in PAGE_CONTENT_DIRS
-        for p in (wiki_dir / sub).glob("*.md")
-        if (wiki_dir / sub).exists()
-    ]
-    if compiled_pages:
-        newest_page = max(compiled_pages, key=lambda p: p.stat().st_mtime)
+    if result.last_compile:
         import datetime
-        mtime = datetime.datetime.fromtimestamp(newest_page.stat().st_mtime)
-        click.echo(f"  Last compile:  {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+        dt = datetime.datetime.fromisoformat(result.last_compile)
+        local_dt = dt.astimezone()
+        click.echo(f"  Last compile:  {local_dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # Last lint time: newest file in wiki/reports/
-    reports_dir = wiki_dir / "reports"
-    if reports_dir.exists():
-        reports = list(reports_dir.glob("*.md"))
-        if reports:
-            newest_report = max(reports, key=lambda p: p.stat().st_mtime)
-            import datetime
-            mtime = datetime.datetime.fromtimestamp(newest_report.stat().st_mtime)
-            click.echo(f"  Last lint:     {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+    if result.last_lint:
+        import datetime
+        dt = datetime.datetime.fromisoformat(result.last_lint)
+        local_dt = dt.astimezone()
+        click.echo(f"  Last lint:     {local_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+
+
+def print_status(kb_dir: Path) -> None:
+    """Print knowledge base status. Usable from CLI and chat REPL."""
+    asyncio.run(_status_kb_and_print(kb_dir))
 
 
 @cli.command()
@@ -1793,6 +1783,49 @@ def feedback(ctx, message, feedback_type):
             "  (no browser available — copy the URL above to file the issue)",
             err=True,
         )
+
+
+# ---------------------------------------------------------------------------
+# `openkb serve` — start the FastAPI HTTP API server
+# ---------------------------------------------------------------------------
+
+@cli.command()
+@click.option("--host", default="0.0.0.0", show_default=True, help="Bind host address.")
+@click.option("--port", default=8000, type=int, show_default=True, help="Bind port.")
+@click.option(
+    "--reload", is_flag=True, default=False,
+    help="Enable auto-reload on code changes (development mode only).",
+)
+def serve(host: str, port: int, reload: bool) -> None:
+    """Start the OpenKB HTTP API server.
+
+    Requires the ``[api]`` extra:
+
+      pip install 'openkb[api]'
+
+    Environment variables control the storage backend:
+
+    \b
+      OPENKB_STORAGE_BACKEND=local   (default, uses local filesystem)
+      OPENKB_STORAGE_BACKEND=azure   (uses Azure Blob Storage or Azurite)
+
+    For local Docker Compose development:
+
+      docker compose up
+    """
+    try:
+        import uvicorn
+        from openkb.api.app import create_app  # noqa: F401
+    except ImportError:
+        click.echo(
+            "The [api] extra is required to run the API server.\n"
+            "Install it with:  pip install 'openkb[api]'",
+            err=True,
+        )
+        raise SystemExit(1)
+
+    app = create_app()
+    uvicorn.run(app, host=host, port=port, reload=reload)
 
 
 # ---------------------------------------------------------------------------
