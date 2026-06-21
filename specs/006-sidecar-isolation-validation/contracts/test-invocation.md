@@ -139,7 +139,7 @@ isolation-tests = [
 ]
 ```
 
-Install with: `pip install -e ".[isolation-tests]"` or `uv sync --extra isolation-tests`
+Install with: `uv sync --extra isolation-tests` or `uv sync --extra isolation-tests`
 
 ---
 

@@ -91,7 +91,7 @@ Requires: Docker Compose stack already running, Python env with isolation-tests 
 ```bash
 # Install test dependencies
 uv sync --extra isolation-tests
-# or: pip install -e ".[isolation-tests]"
+# or: uv sync --extra isolation-tests
 
 # Set environment variables (pointing to localhost-published ports)
 export POSTGRES_URL="postgresql://postgres:postgres@localhost:5432/openkb"

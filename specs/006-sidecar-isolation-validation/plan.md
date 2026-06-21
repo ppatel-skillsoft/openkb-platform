@@ -9,7 +9,7 @@ Build a **pure test harness** — no new services, no new API endpoints, no new 
 
 ## Technical Context
 
-**Language/Version**: Python 3.10+ (matches `pyproject.toml` `requires-python = ">=3.10"`)  
+**Language/Version**: Python 3.12 (matches `pyproject.toml` `requires-python = ">=3.12""`)  
 **Primary Dependencies**: pytest 9.0.3, pytest-asyncio, asyncpg, httpx, azure-storage-blob SDK, psutil  
 **Storage**: PostgreSQL (asyncpg for seeding KB/document fixtures), Azurite (azure-storage-blob SDK for seeding compiled wiki blobs)  
 **Testing**: pytest with pytest-asyncio — this feature **is** the test harness; no unit tests required  
