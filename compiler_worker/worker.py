@@ -9,7 +9,7 @@ from compiler_worker.config import WorkerConfig
 from compiler_worker.job import process_job
 from compiler_worker.queue_client import RedisQueueClient, parse_job
 from openkb.db import documents, get_session
-from sqlalchemy import select, text, update
+from sqlalchemy import text, update
 
 logger = logging.getLogger(__name__)
 
@@ -22,29 +22,37 @@ class WorkerLoop:
         self._shutdown = False
 
     def run(self) -> None:
-        """Configure logging, run stale recovery, then enter the BRPOP loop.
-
-        Handles SIGTERM and SIGINT gracefully by setting the shutdown flag so the
-        loop exits cleanly after the current job completes (or the next idle
-        poll timeout).
-        """
+        """Configure logging then hand off to the single async run."""
         logging.basicConfig(
             level=self._config.log_level,
             format="%(asctime)s %(levelname)s %(name)s — %(message)s",
         )
-        logger.info("Worker started — polling %s", self._config.queue_key)
-
+        # Register OS-level signal handlers before entering the event loop.
         signal.signal(signal.SIGTERM, self._handle_signal)
         signal.signal(signal.SIGINT, self._handle_signal)
 
-        # Stale recovery before entering the poll loop
-        asyncio.run(self._recover_stale())
+        asyncio.run(self._async_run())
+
+    async def _async_run(self) -> None:
+        """Single async entry point — stale recovery then the BRPOP poll loop.
+
+        The blocking ``dequeue()`` call is offloaded to a thread executor so it
+        never blocks the event loop, and the asyncpg connection pool stays bound
+        to this single event loop for its entire lifetime.
+        """
+        logger.info("Worker started — polling %s", self._config.queue_key)
+
+        await self._recover_stale()
 
         queue = RedisQueueClient(self._config.redis_url, self._config.queue_key)
         blob_client = BlobStorageClient(self._config.blob_connection_string)
+        loop = asyncio.get_running_loop()
 
         while not self._shutdown:
-            raw = queue.dequeue(self._config.queue_poll_timeout)
+            # Run blocking BRPOP in a thread so the event loop stays free.
+            raw = await loop.run_in_executor(
+                None, queue.dequeue, self._config.queue_poll_timeout
+            )
             if raw is None:
                 logger.debug("No job in queue; polling again")
                 continue
@@ -55,15 +63,12 @@ class WorkerLoop:
 
             logger.info("Dequeued job %s for document %s", job.job_id, job.document_id)
             try:
-                asyncio.run(self._run_job(job, blob_client))
+                async with get_session() as session:
+                    await process_job(job, self._config, session, blob_client)
             except Exception:
                 logger.exception("Unhandled error processing job %s — worker continues", job.job_id)
 
         logger.info("Worker shutdown complete")
-
-    async def _run_job(self, job, blob_client: BlobStorageClient) -> None:
-        async with get_session() as session:
-            await process_job(job, self._config, session, blob_client)
 
     async def _recover_stale(self) -> None:
         """Mark any documents stuck in 'compiling' state as failed on startup."""
