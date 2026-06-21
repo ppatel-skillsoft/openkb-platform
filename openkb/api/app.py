@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
     Import-guarded: only called when ``openkb[api]`` is installed.
     """
     from openkb.api.routes.kb import kb_router  # deferred to avoid import at module level
+    from openkb.api.routes.sidecar import sidecar_router
 
     app = FastAPI(
         title="OpenKB API",
@@ -72,6 +73,11 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
+    app.include_router(sidecar_router, tags=["Sidecar"])
+
+    @app.get("/health", tags=["Health"])
+    async def health() -> dict:
+        return {"status": "ok"}
 
     # --- Exception handlers ---
 
@@ -100,3 +106,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     return app
+
+
+# Module-level instance required by uvicorn's `openkb.api.app:app` import string.
+app = create_app()

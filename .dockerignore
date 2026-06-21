@@ -16,7 +16,6 @@ build/
 # Local dev / secrets
 .env
 .env.local
-uv.lock
 
 # Tests and specs
 tests/
