@@ -140,7 +140,7 @@ ELAPSED=0
 STATUS=""
 while [[ $ELAPSED -lt $WAIT_SECONDS ]]; do
   STATUS=$(psql -t -c "SELECT status FROM documents WHERE id='${DOC_ID}';" | tr -d ' \n\r')
-  if [[ "$STATUS" == "compiled" || "$STATUS" == "failed" ]]; then
+  if [[ "$STATUS" == "complete" || "$STATUS" == "compiled" || "$STATUS" == "failed" ]]; then
     break
   fi
   sleep 2
@@ -154,11 +154,11 @@ section "Step 6 — Results"
 
 info "Document status: ${STATUS}"
 
-if [[ "$STATUS" == "compiled" ]]; then
+if [[ "$STATUS" == "complete" || "$STATUS" == "compiled" ]]; then
   echo -e "${GREEN}✓ SUCCESS${NC} — document compiled"
   echo ""
   echo "Wiki pages written:"
-  psql -c "SELECT title, blob_path FROM wiki_pages WHERE kb_id='${KB_ID}' ORDER BY created_at DESC LIMIT 10;"
+  psql -c "SELECT slug, page_type, blob_path FROM wiki_pages WHERE kb_id='${KB_ID}' ORDER BY created_at DESC LIMIT 10;"
 elif [[ "$STATUS" == "failed" ]]; then
   REASON=$(psql -t -c "SELECT failure_reason FROM documents WHERE id='${DOC_ID}';" | tr -d '[:space:]' | head -1)
   echo -e "${RED}✗ FAILED${NC} — failure_reason: ${REASON}"
