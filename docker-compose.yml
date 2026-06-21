@@ -1,15 +1,59 @@
 # OpenKB local development stack
 #
-# Uses Azurite (Microsoft's Azure Blob Storage emulator) so the
-# AzureBlobStorageBackend is exercised locally — identical code path to
-# real Azure, different connection string only.
+# Services:
+#   postgres  — Postgres 15 (Phase 0 data layer; pgdata volume for persistence)
+#   migrate   — Runs `alembic upgrade head` once Postgres is healthy
+#   azurite   — Azure Blob Storage emulator (AzureBlobStorageBackend)
+#   api       — OpenKB FastAPI service
 #
-# Usage:
+# Quick start (Phase 0 DB only):
+#   cp .env.example .env
+#   docker compose up postgres migrate --wait
+#
+# Full stack:
 #   cp .env.docker .env          # fill in LLM_API_KEY
-#   docker compose up
+#   docker compose up --wait
 #   curl http://localhost:8000/kb/init -d '{"kb_name":"test"}'
 
 services:
+
+  # ---------------------------------------------------------------------------
+  # postgres — Phase 0 data layer
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: openkb-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-openkb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openkb}
+      POSTGRES_DB: ${POSTGRES_DB:-openkb}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-openkb}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # migrate — applies Alembic migrations once Postgres is healthy (FR-009)
+  # ---------------------------------------------------------------------------
+  migrate:
+    build:
+      context: .
+      target: migrate
+    container_name: openkb-migrate
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-openkb}:${POSTGRES_PASSWORD:-openkb}@postgres:5432/${POSTGRES_DB:-openkb}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:latest
@@ -26,7 +70,9 @@ services:
       retries: 10
 
   api:
-    build: .
+    build:
+      context: .
+      target: api
     container_name: openkb-api
     ports:
       - "8000:8000"
@@ -52,4 +98,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  pgdata:
   azurite_data:

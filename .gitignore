@@ -9,6 +9,9 @@ venv/
 .DS_Store
 .env
 
+# Phase 0 Postgres — local Docker volume data (never commit DB files)
+pgdata/
+
 # Knowledge base test artifacts
 raw/
 wiki/

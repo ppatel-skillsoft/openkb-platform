@@ -57,8 +57,20 @@ openkb = "openkb.cli:cli"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [project.optional-dependencies]
+# DB extra — adds SQLAlchemy Core 2.x (async), asyncpg driver, and Alembic
+# migrations.  Required by openkb.db and by `alembic upgrade head`.
+# sqlalchemy[asyncio] pulls in greenlet which is needed for the async engine.
+# asyncpg 0.30.0 is the first release with full Python 3.12/3.13 support.
+# alembic 1.14.1 adds native asyncio runner support used in env.py.
+db = [
+    "sqlalchemy[asyncio]==2.0.41",
+    "asyncpg==0.30.0",
+    "alembic==1.14.1",
+]
+
 # API extra — adds FastAPI, ASGI server, and Azure Blob Storage SDK.
 # Installing this extra is required before running `openkb serve`.
 # azure-storage-blob[aio] provides the async BlobServiceClient used by
@@ -76,6 +88,11 @@ dev = [
     "httpx==0.28.1",
     # anyio provides async test fixtures and the pytest-anyio plugin
     "anyio==4.14.0",
+    # db deps pulled in so tests/db/ can import openkb.db without installing the
+    # db extra separately
+    "sqlalchemy[asyncio]==2.0.41",
+    "asyncpg==0.30.0",
+    "alembic==1.14.1",
 ]
 
 [tool.hatch.version]
