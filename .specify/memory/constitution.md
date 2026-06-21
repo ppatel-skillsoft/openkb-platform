@@ -74,7 +74,10 @@ shared state MUST be coordinated via explicit locks. Partial state is worse than
 
 ## Technical Standards
 
-- **Python ≥ 3.10**; use `from __future__ import annotations` in all modules.
+- **Python 3.12** (exact minimum); use `from __future__ import annotations` in all modules.
+  `pyproject.toml` MUST declare `requires-python = ">=3.12"`.
+- **uv** is the package manager. Use `uv add` / `uv run` / `uv sync`. Do NOT use `pip` directly.
+  All dependency changes MUST go through `uv` and update `uv.lock`.
 - Use standard-library `logging` with module-level loggers (`logger = logging.getLogger(__name__)`).
   Do not use `print` for diagnostic output in library code.
 - Type-annotate all public functions and class attributes. Avoid `Any` except at genuine
@@ -104,4 +107,14 @@ clarifications), and an update to this file before the change lands.
 All code reviews MUST verify compliance with the principles above. Non-compliance MUST be flagged
 as a blocking comment, not a suggestion.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-19
+**Version**: 1.1.0 | **Ratified**: 2026-06-19 | **Last Amended**: 2026-06-21
+
+<!--
+AMENDMENT LOG
+=============
+v1.1.0 (2026-06-21): Raised minimum Python from ≥3.10 to 3.12 (exact). Mandated uv as the
+  sole package manager; pip usage is prohibited. Rationale: Python 3.12 ships significant
+  performance improvements and type-system enhancements; uv provides reproducible, fast
+  dependency resolution enforced by uv.lock.
+-->
+
