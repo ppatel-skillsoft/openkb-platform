@@ -1,19 +1,21 @@
 # OpenKB local development stack
 #
 # Services:
-#   postgres  — Postgres 15 (Phase 0 data layer; pgdata volume for persistence)
-#   migrate   — Runs `alembic upgrade head` once Postgres is healthy
-#   azurite   — Azure Blob Storage emulator (AzureBlobStorageBackend)
-#   api       — OpenKB FastAPI service
+#   postgres         — Postgres 15 (Phase 0 data layer; pgdata volume for persistence)
+#   migrate          — Runs `alembic upgrade head` once Postgres is healthy
+#   azurite          — Azure Blob Storage emulator (AzureBlobStorageBackend)
+#   redis            — Redis 7 queue backend for compiler-worker
+#   api              — OpenKB FastAPI service (acts as sidecar for compiler-worker)
+#   compiler-worker  — Background compilation worker
 #
 # Quick start (Phase 0 DB only):
 #   cp .env.example .env
 #   docker compose up postgres migrate --wait
 #
-# Full stack:
+# Full five-service stack:
 #   cp .env.docker .env          # fill in LLM_API_KEY
 #   docker compose up --wait
-#   curl http://localhost:8000/kb/init -d '{"kb_name":"test"}'
+#   curl http://localhost:8000/docs
 
 services:
 
@@ -69,6 +71,21 @@ services:
       timeout: 3s
       retries: 10
 
+  # ---------------------------------------------------------------------------
+  # redis — job queue backend for compiler-worker
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: openkb-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -95,6 +112,38 @@ services:
       timeout: 5s
       retries: 6
       start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # compiler-worker — consumes Redis jobs and drives the sidecar
+  # ---------------------------------------------------------------------------
+  compiler-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.compiler-worker
+    container_name: openkb-compiler-worker
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-openkb}:${POSTGRES_PASSWORD:-openkb}@postgres:5432/${POSTGRES_DB:-openkb}"
+      REDIS_URL: "redis://redis:6379/0"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1"
+      SIDECAR_CMD: "uvicorn openkb.api.app:app"
+      KB_ID: "00000000-0000-0000-0000-000000000001"
+      LOG_LEVEL: "INFO"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ps aux | grep -q '[p]ython -m compiler_worker'"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
