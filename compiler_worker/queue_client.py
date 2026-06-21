@@ -23,7 +23,11 @@ class RedisQueueClient:
     """Concrete BRPOP-based queue consumer backed by Redis."""
 
     def __init__(self, redis_url: str, queue_key: str) -> None:
-        self._client = redis_lib.from_url(redis_url, decode_responses=True)
+        # socket_timeout=None: let BRPOP manage its own server-side timeout;
+        # a finite socket timeout would race with the BRPOP block duration.
+        self._client = redis_lib.from_url(
+            redis_url, decode_responses=True, socket_timeout=None, socket_connect_timeout=5
+        )
         self._queue_key = queue_key
 
     def dequeue(self, timeout: int) -> str | None:
