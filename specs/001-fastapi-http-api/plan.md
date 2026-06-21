@@ -15,7 +15,7 @@ install stays lightweight.
 
 ## Technical Context
 
-**Language/Version**: Python ≥ 3.10; `from __future__ import annotations` in
+**Language/Version**: Python 3.12; `from __future__ import annotations` in
 all new modules (existing convention throughout `openkb/`).
 
 **Primary Dependencies (new — `[api]` extra)**:

@@ -256,7 +256,7 @@ def serve(host, port, reload):
     except ImportError:
         click.echo(
             "The [api] extra is required. Install with:\n"
-            "  pip install 'openkb[api]'"
+            "  uv sync --extra api"
         )
         raise SystemExit(1)
     uvicorn.run(create_app(), host=host, port=port, reload=reload)

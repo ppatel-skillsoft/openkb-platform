@@ -94,7 +94,7 @@ openkb query "What are the findings?"
 For rapid iteration on the API code itself, skip Docker and use the local backend:
 
 ```bash
-pip install 'openkb[api,dev]'
+uv sync --extra api,dev
 
 export OPENKB_STORAGE_BACKEND=local
 export OPENKB_BASE_DIR=/tmp/kbs
