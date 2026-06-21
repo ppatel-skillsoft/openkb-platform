@@ -45,6 +45,10 @@ dependencies = [
     "prompt_toolkit==3.0.52",
     "rich==15.0.0",
     "portalocker==3.2.0",
+    # compiler-worker runtime dependencies (added for feature 003)
+    "redis>=5.0.0",
+    "httpx>=0.27.0",
+    "aiofiles>=23.0.0",
 ]
 
 [project.urls]
@@ -99,4 +103,4 @@ dev = [
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["openkb"]
+packages = ["openkb", "compiler_worker"]

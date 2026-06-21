@@ -1,3 +1,3 @@
 {
-  "feature_directory": "specs/001-phase0-postgres-schema"
+  "feature_directory": "specs/002-compiler-worker-skeleton"
 }
