@@ -73,6 +73,10 @@ def create_app() -> FastAPI:
 
     app.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
 
+    @app.get("/health", tags=["Health"])
+    async def health() -> dict:
+        return {"status": "ok"}
+
     # --- Exception handlers ---
 
     @app.exception_handler(KBNotFoundError)
