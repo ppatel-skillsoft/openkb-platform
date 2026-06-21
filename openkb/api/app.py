@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
     Import-guarded: only called when ``openkb[api]`` is installed.
     """
     from openkb.api.routes.kb import kb_router  # deferred to avoid import at module level
+    from openkb.api.routes.sidecar import sidecar_router
 
     app = FastAPI(
         title="OpenKB API",
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(kb_router, prefix="/kb", tags=["Knowledge Base"])
+    app.include_router(sidecar_router, tags=["Sidecar"])
 
     @app.get("/health", tags=["Health"])
     async def health() -> dict:
