@@ -100,3 +100,7 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     return app
+
+
+# Module-level instance required by uvicorn's `openkb.api.app:app` import string.
+app = create_app()
