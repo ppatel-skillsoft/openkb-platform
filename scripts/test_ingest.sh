@@ -102,7 +102,7 @@ DOC_ID=$(psql -t -c "
   INSERT INTO documents (kb_id, source_type, original_filename, status)
   VALUES ('${KB_ID}', 'upload', '${FILENAME}', 'pending')
   RETURNING id;
-" | tr -d '[:space:]')
+" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
 
 if [[ -z "$DOC_ID" ]]; then
   error "Failed to insert document row"
@@ -139,7 +139,7 @@ section "Step 5 — Waiting up to ${WAIT_SECONDS}s for worker to process job"
 ELAPSED=0
 STATUS=""
 while [[ $ELAPSED -lt $WAIT_SECONDS ]]; do
-  STATUS=$(psql -t -c "SELECT status FROM documents WHERE id='${DOC_ID}';" | tr -d '[:space:]')
+  STATUS=$(psql -t -c "SELECT status FROM documents WHERE id='${DOC_ID}';" | tr -d ' \n\r')
   if [[ "$STATUS" == "compiled" || "$STATUS" == "failed" ]]; then
     break
   fi
