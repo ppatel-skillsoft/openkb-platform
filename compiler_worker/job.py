@@ -72,7 +72,15 @@ async def process_job(
     # ------------------------------------------------------------------
     # 2. Create scratch directory and download source blob
     # ------------------------------------------------------------------
-    scratch_dir = Path(tempfile.mkdtemp(prefix="openkb-job-"))
+    # If COMPILER_WORKER_SCRATCH_ROOT is set, create the scratch dir there so
+    # that a shared Docker volume makes it visible to the isolation-tests
+    # container (spec 006 FR-007). Otherwise use the system temp dir.
+    scratch_dir = Path(
+        tempfile.mkdtemp(
+            prefix="openkb-job-",
+            dir=config.scratch_dir_root,
+        )
+    )
     raw_dir = scratch_dir / "raw"
     raw_dir.mkdir()
     dest_file = raw_dir / job.filename

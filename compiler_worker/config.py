@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -37,6 +38,11 @@ class WorkerConfig:
     sidecar_compile_timeout: int = 300
     sidecar_poll_interval: float = 2.0
     log_level: str = "INFO"
+    # When set, tempfile.mkdtemp is called with dir=scratch_dir_root so that
+    # per-job scratch directories are created under this path. This allows a
+    # shared Docker volume to be mounted here, making scratch dirs visible to
+    # the isolation-tests container (spec 006 FR-007).
+    scratch_dir_root: Path | None = None
 
     @classmethod
     def from_env(cls) -> WorkerConfig:
@@ -69,4 +75,7 @@ class WorkerConfig:
                 os.environ.get("SIDECAR_POLL_INTERVAL_S", "2.0")
             ),
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
+            scratch_dir_root=(
+                Path(v) if (v := os.environ.get("COMPILER_WORKER_SCRATCH_ROOT")) else None
+            ),
         )
