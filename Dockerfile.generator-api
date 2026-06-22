@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1
+# Multi-stage image for the generator-api service.
+# The openkb sidecar (openkb serve) is invoked as a subprocess per query request.
+#
+# Build:  docker build -f Dockerfile.generator-api -t openkb-generator-api .
+# Run:    docker run --env-file .env -p 8001:8001 openkb-generator-api
+
+# ── builder ──────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml uv.lock README.md ./
+COPY openkb/ ./openkb/
+COPY generator_api/ ./generator_api/
+
+# Install all non-dev dependencies into a virtual env.
+# SETUPTOOLS_SCM_PRETEND_VERSION is required because .git is excluded from the build context.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 uv sync --no-dev --frozen --all-extras
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# curl is required for Docker Compose HEALTHCHECK
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Copy the virtual env from the builder stage
+COPY --from=builder /app/.venv /app/.venv
+
+# Add venv to PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy the application source
+COPY openkb/ ./openkb/
+COPY generator_api/ ./generator_api/
+
+# Non-root user for safety
+RUN useradd -m generator
+USER generator
+
+EXPOSE 8001
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 \
+    CMD curl -sf http://localhost:8001/health || exit 1
+
+CMD ["python", "-m", "generator_api"]
