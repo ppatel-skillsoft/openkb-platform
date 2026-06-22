@@ -12,12 +12,13 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml uv.lock README.md ./
-COPY openkb/ ./openkb/
-COPY generator_api/ ./generator_api/
+# git is required to fetch openkb-core from the pinned git tag in pyproject.toml
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Install all non-dev dependencies into a virtual env.
+COPY pyproject.toml uv.lock README.md ./
+COPY generator_api/ ./generator_api/
 # SETUPTOOLS_SCM_PRETEND_VERSION is required because .git is excluded from the build context.
+# openkb-core is pulled from the pinned git tag in pyproject.toml.
 RUN SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 uv sync --no-dev --frozen --all-extras
 
 # ── runtime ──────────────────────────────────────────────────────────────────
@@ -31,11 +32,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf 
 # Copy the virtual env from the builder stage
 COPY --from=builder /app/.venv /app/.venv
 
-# Add venv to PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Copy the application source
-COPY openkb/ ./openkb/
+# Copy the application source (openkb-core is in the venv, not here)
 COPY generator_api/ ./generator_api/
 
 # Non-root user for safety

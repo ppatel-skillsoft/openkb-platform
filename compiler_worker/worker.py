@@ -7,7 +7,7 @@ import signal
 from compiler_worker.blob_client import BlobStorageClient
 from compiler_worker.config import WorkerConfig
 from compiler_worker.job import process_job
-from compiler_worker.queue_client import PostgresQueueClient, RedisQueueClient, parse_job
+from compiler_worker.queue_client import PostgresQueueClient, parse_job
 from openkb.db import documents, get_session
 from sqlalchemy import text, update
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class WorkerLoop:
-    """Main worker loop: dequeues jobs from Redis and processes them one at a time."""
+    """Main worker loop: dequeues jobs from Postgres SKIP LOCKED and processes them."""
 
     def __init__(self, config: WorkerConfig) -> None:
         self._config = config
@@ -34,34 +34,16 @@ class WorkerLoop:
         asyncio.run(self._async_run())
 
     async def _async_run(self) -> None:
-        """Single async entry point — stale recovery then the poll loop.
-
-        PostgresQueueClient.dequeue() is async and called directly.
-        RedisQueueClient.dequeue() is sync/blocking and offloaded to a thread.
-        """
-        logger.info("Worker started — queue_backend=%s", self._config.queue_backend)
+        """Single async entry point — stale recovery then the poll loop."""
+        logger.info("Worker started — queue_backend=postgres")
 
         await self._recover_stale()
 
-        if self._config.queue_backend == "redis":
-            queue: RedisQueueClient | PostgresQueueClient = RedisQueueClient(
-                self._config.redis_url, self._config.queue_key
-            )
-            use_async = False
-        else:
-            queue = PostgresQueueClient(poll_interval=self._config.queue_poll_timeout)
-            use_async = True
-
+        queue = PostgresQueueClient(poll_interval=self._config.queue_poll_timeout)
         blob_client = BlobStorageClient(self._config.blob_connection_string)
-        loop = asyncio.get_running_loop()
 
         while not self._shutdown:
-            if use_async:
-                raw = await queue.dequeue(self._config.queue_poll_timeout)
-            else:
-                raw = await loop.run_in_executor(
-                    None, queue.dequeue, self._config.queue_poll_timeout
-                )
+            raw = await queue.dequeue(self._config.queue_poll_timeout)
 
             if raw is None:
                 logger.debug("No job in queue; polling again")

@@ -3,61 +3,37 @@ requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
-name = "openkb"
+name = "openkb-platform"
 dynamic = ["version"]
-description = "OpenKB: Open LLM Knowledge Base, powered by PageIndex"
+description = "OpenKB platform — generator-api, compiler-worker, Docker Compose stack"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Kylin", email = "quanqi@pageindex.ai"},
-    {name = "Ray", email = "ray@vectify.ai"},
+    {name = "ppatel-skillsoft"},
 ]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-]
-keywords = ["ai", "rag", "retrieval", "knowledge-base", "llm", "pageindex", "agents", "document"]
-# All dependencies are pinned exactly (supply-chain caution — e.g. the
-# litellm package-poisoning incident). Bump deliberately after vetting
-# each release.
-# litellm 1.87.2 fixes the chatgpt/* (ChatGPT subscription) provider
-# returning empty Responses output (BerriAI/litellm#25429) and
-# auto-injects GitHub Copilot IDE-auth headers.
+keywords = ["ai", "rag", "knowledge-base", "llm", "generator-api", "compiler-worker"]
+# openkb-core is pinned to an exact git tag.
+# To upgrade: bump the @vX.Y.Z tag, run uv sync, rebuild Docker images,
+# and run docker compose --profile test run --rm isolation-tests before merging.
 dependencies = [
-    "pageindex==0.3.0.dev1",
-    "markitdown[docx,pptx,xlsx,xls]==0.1.5",
-    "trafilatura==2.0.0",
-    "click==8.4.0",
-    "watchdog==6.0.0",
-    "litellm==1.87.2",
-    "openai-agents==0.17.3",
-    "pyyaml==6.0.3",
-    "python-dotenv==1.2.2",
-    "json-repair==0.59.10",
-    "prompt_toolkit==3.0.52",
-    "rich==15.0.0",
-    "portalocker==3.2.0",
-    # compiler-worker runtime dependencies (added for feature 003)
-    "redis>=5.0.0",
-    "httpx>=0.27.0",
-    "aiofiles>=23.0.0",
+    "openkb-core @ git+https://github.com/ppatel-skillsoft/openkb-core@v0.1.0",
+    # generator-api dependencies
+    "fastapi==0.137.2",
+    "uvicorn[standard]==0.49.0",
+    "pydantic-settings==2.10.1",
+    "azure-storage-blob[aio]==12.24.0",
+    "httpx==0.28.1",
+    # compiler-worker dependencies
+    "sqlalchemy[asyncio]==2.0.41",
+    "asyncpg==0.30.0",
+    "alembic==1.14.1",
+    "aiofiles==23.2.1",
 ]
 
 [project.urls]
-Repository = "https://github.com/VectifyAI/OpenKB"
-Homepage = "https://github.com/VectifyAI/OpenKB"
-Issues = "https://github.com/VectifyAI/OpenKB/issues"
-
-[project.scripts]
-openkb = "openkb.cli:cli"
+Repository = "https://github.com/ppatel-skillsoft/openkb-platform"
+Core = "https://github.com/ppatel-skillsoft/openkb-core"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -111,8 +87,12 @@ isolation-tests = [
     "psutil==6.1.1",
 ]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.version]
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["openkb", "compiler_worker", "generator_api"]
+# openkb is now in openkb-core; platform only ships the service packages
+packages = ["compiler_worker", "generator_api"]

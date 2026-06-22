@@ -5,41 +5,12 @@ import json
 import logging
 from typing import Protocol
 
-import redis as redis_lib
 import sqlalchemy as sa
 
 from compiler_worker.models import CompilationJob
 from openkb.db import compiler_jobs, get_engine
 
 logger = logging.getLogger(__name__)
-
-
-class QueueClient(Protocol):
-    """Abstract queue consumer interface."""
-
-    def dequeue(self, timeout: int) -> str | None:
-        """Block up to *timeout* seconds; return raw JSON string or ``None``."""
-        ...
-
-
-class RedisQueueClient:
-    """Concrete BRPOP-based queue consumer backed by Redis."""
-
-    def __init__(self, redis_url: str, queue_key: str) -> None:
-        # socket_timeout=None: let BRPOP manage its own server-side timeout;
-        # a finite socket timeout would race with the BRPOP block duration.
-        self._client = redis_lib.from_url(
-            redis_url, decode_responses=True, socket_timeout=None, socket_connect_timeout=5
-        )
-        self._queue_key = queue_key
-
-    def dequeue(self, timeout: int) -> str | None:
-        """Block up to *timeout* seconds; return raw JSON string or ``None``."""
-        result = self._client.brpop(self._queue_key, timeout=timeout)
-        if result is None:
-            return None
-        _, raw = result
-        return raw
 
 
 class PostgresQueueClient:

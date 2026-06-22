@@ -12,11 +12,11 @@ resolution-markers = [
 
 [[package]]
 name = "aiofiles"
-version = "25.1.0"
+version = "23.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/41/c3/534eac40372d8ee36ef40df62ec129bee4fdb5ad9706e58a29be53b2c970/aiofiles-25.1.0.tar.gz", hash = "sha256:a8d728f0a29de45dc521f18f07297428d56992a742f0cd2701ba86e44d23d5b2", size = 46354, upload-time = "2025-10-09T20:51:04.358Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/41/cfed10bc64d774f497a86e5ede9248e1d062db675504b41c320954d99641/aiofiles-23.2.1.tar.gz", hash = "sha256:84ec2218d8419404abcb9f0c02df3f34c6e0a68ed41072acfb1cef5cbc29051a", size = 32072, upload-time = "2023-08-09T15:23:11.564Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bc/8a/340a1555ae33d7354dbca4faa54948d76d89a27ceef032c8c3bc661d003e/aiofiles-25.1.0-py3-none-any.whl", hash = "sha256:abe311e527c862958650f9438e859c1fa7568a141b22abcd015e120e86a85695", size = 14668, upload-time = "2025-10-09T20:51:03.174Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/19/5af6804c4cc0fed83f47bff6e413a98a36618e7d40185cd36e69737f3b0e/aiofiles-23.2.1-py3-none-any.whl", hash = "sha256:19297512c647d4b27a2cf7c34caa7e405c0d60b5560618a29a9fe027b18b0107", size = 15727, upload-time = "2023-08-09T15:23:09.774Z" },
 ]
 
 [[package]]
@@ -1692,12 +1692,11 @@ wheels = [
 ]
 
 [[package]]
-name = "openkb"
-source = { editable = "." }
+name = "openkb-core"
+version = "0.1.1.dev1+gcc54806b3"
+source = { git = "https://github.com/ppatel-skillsoft/openkb-core?rev=v0.1.0#cc54806b3988fc621e04e11d6ba101f38f27c226" }
 dependencies = [
-    { name = "aiofiles" },
     { name = "click" },
-    { name = "httpx" },
     { name = "json-repair" },
     { name = "litellm" },
     { name = "markitdown", extra = ["docx", "pptx", "xls", "xlsx"] },
@@ -1707,10 +1706,25 @@ dependencies = [
     { name = "prompt-toolkit" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "redis" },
     { name = "rich" },
     { name = "trafilatura" },
     { name = "watchdog" },
+]
+
+[[package]]
+name = "openkb-platform"
+source = { editable = "." }
+dependencies = [
+    { name = "aiofiles" },
+    { name = "alembic" },
+    { name = "asyncpg" },
+    { name = "azure-storage-blob", extra = ["aio"] },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "openkb-core" },
+    { name = "pydantic-settings" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.optional-dependencies]
@@ -1734,41 +1748,51 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "sqlalchemy", extra = ["asyncio"] },
 ]
+isolation-tests = [
+    { name = "anyio" },
+    { name = "asyncpg" },
+    { name = "azure-storage-blob", extra = ["aio"] },
+    { name = "httpx" },
+    { name = "psutil" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "aiofiles", specifier = ">=23.0.0" },
+    { name = "aiofiles", specifier = "==23.2.1" },
+    { name = "alembic", specifier = "==1.14.1" },
     { name = "alembic", marker = "extra == 'db'", specifier = "==1.14.1" },
     { name = "alembic", marker = "extra == 'dev'", specifier = "==1.14.1" },
     { name = "anyio", marker = "extra == 'dev'", specifier = "==4.14.0" },
+    { name = "anyio", marker = "extra == 'isolation-tests'", specifier = "==4.14.0" },
+    { name = "asyncpg", specifier = "==0.30.0" },
     { name = "asyncpg", marker = "extra == 'db'", specifier = "==0.30.0" },
     { name = "asyncpg", marker = "extra == 'dev'", specifier = "==0.30.0" },
+    { name = "asyncpg", marker = "extra == 'isolation-tests'", specifier = "==0.30.0" },
+    { name = "azure-storage-blob", extras = ["aio"], specifier = "==12.24.0" },
     { name = "azure-storage-blob", extras = ["aio"], marker = "extra == 'api'", specifier = "==12.24.0" },
-    { name = "click", specifier = "==8.4.0" },
+    { name = "azure-storage-blob", extras = ["aio"], marker = "extra == 'isolation-tests'", specifier = "==12.24.0" },
+    { name = "fastapi", specifier = "==0.137.2" },
     { name = "fastapi", marker = "extra == 'api'", specifier = "==0.137.2" },
-    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = "==0.28.1" },
-    { name = "json-repair", specifier = "==0.59.10" },
-    { name = "litellm", specifier = "==1.87.2" },
-    { name = "markitdown", extras = ["docx", "pptx", "xls", "xlsx"], specifier = "==0.1.5" },
-    { name = "openai-agents", specifier = "==0.17.3" },
-    { name = "pageindex", specifier = "==0.3.0.dev1" },
-    { name = "portalocker", specifier = "==3.2.0" },
-    { name = "prompt-toolkit", specifier = "==3.0.52" },
+    { name = "httpx", marker = "extra == 'isolation-tests'", specifier = "==0.28.1" },
+    { name = "openkb-core", git = "https://github.com/ppatel-skillsoft/openkb-core?rev=v0.1.0" },
+    { name = "psutil", marker = "extra == 'isolation-tests'", specifier = "==6.1.1" },
+    { name = "pydantic-settings", specifier = "==2.10.1" },
     { name = "pydantic-settings", marker = "extra == 'api'", specifier = "==2.10.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = "==9.0.3" },
+    { name = "pytest", marker = "extra == 'isolation-tests'", specifier = "==9.0.3" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = "==1.3.0" },
-    { name = "python-dotenv", specifier = "==1.2.2" },
-    { name = "pyyaml", specifier = "==6.0.3" },
-    { name = "redis", specifier = ">=5.0.0" },
-    { name = "rich", specifier = "==15.0.0" },
+    { name = "pytest-asyncio", marker = "extra == 'isolation-tests'", specifier = "==1.3.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.41" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'db'", specifier = "==2.0.41" },
     { name = "sqlalchemy", extras = ["asyncio"], marker = "extra == 'dev'", specifier = "==2.0.41" },
-    { name = "trafilatura", specifier = "==2.0.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.49.0" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'api'", specifier = "==0.49.0" },
-    { name = "watchdog", specifier = "==6.0.0" },
 ]
-provides-extras = ["api", "db", "dev"]
+provides-extras = ["api", "db", "dev", "isolation-tests"]
 
 [[package]]
 name = "openpyxl"
@@ -2071,6 +2095,21 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/8e/e5/e46adb0badc388bfb84877a5f9f026aff63f60e611016cf64dbe77e05446/protobuf-7.35.0-cp310-abi3-win32.whl", hash = "sha256:4c4617b83ade0e279d1d2bfe04025a1adb87f9ed657de038620dc0ff959357f6", size = 428946, upload-time = "2026-05-19T23:02:25.741Z" },
     { url = "https://files.pythonhosted.org/packages/a7/ab/547fbd9e16d879dd13c167478f8ae0a83a428008ca07a5e06acdc23ad473/protobuf-7.35.0-cp310-abi3-win_amd64.whl", hash = "sha256:f05bcadf9a2a6b8dda047007075135fb7d08c73d9177aabc067e1be46881a201", size = 439996, upload-time = "2026-05-19T23:02:26.808Z" },
     { url = "https://files.pythonhosted.org/packages/b8/ef/50433d346c56657a70d27f156c7b349ac59a068b01de4eb796e747eecc43/protobuf-7.35.0-py3-none-any.whl", hash = "sha256:c13f325cf242bad135c350629eeb5d54b24228eb472fb3e2e9ebbd4c5dc20ca0", size = 171659, upload-time = "2026-05-19T23:02:27.842Z" },
+]
+
+[[package]]
+name = "psutil"
+version = "6.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/5a/07871137bb752428aa4b659f910b399ba6f291156bdea939be3e96cae7cb/psutil-6.1.1.tar.gz", hash = "sha256:cf8496728c18f2d0b45198f06895be52f36611711746b7f30c464b422b50e2f5", size = 508502, upload-time = "2024-12-19T18:21:20.568Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/99/ca79d302be46f7bdd8321089762dd4476ee725fce16fc2b2e1dbba8cac17/psutil-6.1.1-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:fc0ed7fe2231a444fc219b9c42d0376e0a9a1a72f16c5cfa0f68d19f1a0663e8", size = 247511, upload-time = "2024-12-19T18:21:45.163Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/6b/73dbde0dd38f3782905d4587049b9be64d76671042fdcaf60e2430c6796d/psutil-6.1.1-cp36-abi3-macosx_11_0_arm64.whl", hash = "sha256:0bdd4eab935276290ad3cb718e9809412895ca6b5b334f5a9111ee6d9aff9377", size = 248985, upload-time = "2024-12-19T18:21:49.254Z" },
+    { url = "https://files.pythonhosted.org/packages/17/38/c319d31a1d3f88c5b79c68b3116c129e5133f1822157dd6da34043e32ed6/psutil-6.1.1-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:b6e06c20c05fe95a3d7302d74e7097756d4ba1247975ad6905441ae1b5b66003", size = 284488, upload-time = "2024-12-19T18:21:51.638Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/39/0f88a830a1c8a3aba27fededc642da37613c57cbff143412e3536f89784f/psutil-6.1.1-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:97f7cb9921fbec4904f522d972f0c0e1f4fabbdd4e0287813b21215074a0f160", size = 287477, upload-time = "2024-12-19T18:21:55.306Z" },
+    { url = "https://files.pythonhosted.org/packages/47/da/99f4345d4ddf2845cb5b5bd0d93d554e84542d116934fde07a0c50bd4e9f/psutil-6.1.1-cp36-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:33431e84fee02bc84ea36d9e2c4a6d395d479c9dd9bba2376c1f6ee8f3a4e0b3", size = 289017, upload-time = "2024-12-19T18:21:57.875Z" },
+    { url = "https://files.pythonhosted.org/packages/38/53/bd755c2896f4461fd4f36fa6a6dcb66a88a9e4b9fd4e5b66a77cf9d4a584/psutil-6.1.1-cp37-abi3-win32.whl", hash = "sha256:eaa912e0b11848c4d9279a93d7e2783df352b082f40111e078388701fd479e53", size = 250602, upload-time = "2024-12-19T18:22:08.808Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/d7/7831438e6c3ebbfa6e01a927127a6cb42ad3ab844247f3c5b96bea25d73d/psutil-6.1.1-cp37-abi3-win_amd64.whl", hash = "sha256:f35cfccb065fff93529d2afb4a2e89e363fe63ca1e4a5da22b603a85833c2649", size = 254444, upload-time = "2024-12-19T18:22:11.335Z" },
 ]
 
 [[package]]
@@ -2386,15 +2425,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/da/92/1446574745d74df0c92e6aa4a7b0b3130706a4142b2d1a5869f2eaa423c6/pyyaml-6.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:16249ee61e95f858e83976573de0f5b2893b3677ba71c9dd36b9cf8be9ac6d65", size = 829923, upload-time = "2025-09-25T21:32:54.537Z" },
     { url = "https://files.pythonhosted.org/packages/f0/7a/1c7270340330e575b92f397352af856a8c06f230aa3e76f86b39d01b416a/pyyaml-6.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4ad1906908f2f5ae4e5a8ddfce73c320c2a1429ec52eafd27138b7f1cbe341c9", size = 174062, upload-time = "2025-09-25T21:32:55.767Z" },
     { url = "https://files.pythonhosted.org/packages/f1/12/de94a39c2ef588c7e6455cfbe7343d3b2dc9d6b6b2f40c4c6565744c873d/pyyaml-6.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:ebc55a14a21cb14062aa4162f906cd962b28e2e9ea38f9b4391244cd8de4ae0b", size = 149341, upload-time = "2025-09-25T21:32:56.828Z" },
-]
-
-[[package]]
-name = "redis"
-version = "8.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/ae/ed461cca5780b5fc8b9fe8ca0ed98d89508645fb9d880c24cc42c087678f/redis-8.0.0.tar.gz", hash = "sha256:a00c5355432051ac14e593b8b197fc76c887ee12d55a0984f69328a1115fdc49", size = 5101591, upload-time = "2026-05-28T12:45:13.5Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/e3/b519734372d305bd547534a9f32e4ce9f98552af753dce72cf3483a0ff0b/redis-8.0.0-py3-none-any.whl", hash = "sha256:c938c18338585009f0bc310f4c7e4e4b4d37639356c4ac072cedf3af570c8dc7", size = 499870, upload-time = "2026-05-28T12:45:11.697Z" },
 ]
 
 [[package]]

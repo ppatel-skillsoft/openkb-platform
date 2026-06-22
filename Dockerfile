@@ -3,15 +3,21 @@ FROM python:3.12-slim AS base
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
-COPY openkb/ ./openkb/
-# Also copy migration files so the migrate target can run alembic
-COPY alembic.ini ./
-COPY openkb/db/migrations/ ./openkb/db/migrations/
+# git is required to fetch openkb-core from the pinned git tag in pyproject.toml
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# hatch-vcs needs git history to detect version; provide a static fallback
-# so the image builds from a plain file copy (no .git directory needed).
-RUN SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 pip install --no-cache-dir ".[api,db]"
+COPY pyproject.toml README.md ./
+COPY alembic.ini ./
+
+# hatch-vcs needs git history to detect version; provide a static fallback.
+# openkb-core is installed from the pinned git tag in pyproject.toml.
+# After install, extract the migration files from the installed package so
+# alembic.ini (script_location = openkb/db/migrations) can find them.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 pip install --no-cache-dir ".[api,db]" && \
+    python -c "import shutil, os, openkb.db.migrations; \
+               src = os.path.dirname(openkb.db.migrations.__file__); \
+               os.makedirs('openkb/db/migrations', exist_ok=True); \
+               shutil.copytree(src, 'openkb/db/migrations', dirs_exist_ok=True)"
 
 # Non-root user for safety
 RUN useradd -m openkb
