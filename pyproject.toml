@@ -103,4 +103,4 @@ dev = [
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["openkb", "compiler_worker"]
+packages = ["openkb", "compiler_worker", "generator_api"]

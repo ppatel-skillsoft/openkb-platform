@@ -146,6 +146,34 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  generator-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.generator-api
+    container_name: openkb-generator-api
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-openkb}:${POSTGRES_PASSWORD:-openkb}@postgres:5432/${POSTGRES_DB:-openkb}"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1"
+      AZURE_KB_CONTAINER: "openkb"
+      GENERATOR_HOST: "0.0.0.0"
+      GENERATOR_PORT: "8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   pgdata:
   azurite_data:

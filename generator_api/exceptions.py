@@ -1,0 +1,25 @@
+from __future__ import annotations
+
+
+class KBNotFoundError(Exception):
+    def __init__(self, kb_id: str) -> None:
+        super().__init__(f"Knowledge base {kb_id} not found")
+        self.kb_id = kb_id
+
+
+class KBNotReadyError(Exception):
+    def __init__(self, kb_id: str) -> None:
+        super().__init__(f"Knowledge base {kb_id} has no compiled documents")
+        self.kb_id = kb_id
+
+
+class BlobSyncError(Exception):
+    """Raised when the wiki tree cannot be synced from Blob Storage."""
+
+
+class SidecarStartError(Exception):
+    """Raised when the sidecar fails to become healthy within the timeout."""
+
+
+class SidecarQueryError(Exception):
+    """Raised when the sidecar returns a non-2xx response."""
