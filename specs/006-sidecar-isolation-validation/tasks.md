@@ -112,7 +112,7 @@
 
 ## Phase 8 — Polish
 
-- [ ] T014 Run `docker compose --profile test run --rm isolation-tests` and confirm all 5 scenario files pass; update task checkboxes; confirm no Redis references remain in suite output or service logs
+- [X] T014 Run `docker compose --profile test run --rm isolation-tests` and confirm all 5 scenario files pass; update task checkboxes; confirm no Redis references remain in suite output or service logs
 
 ---
 
