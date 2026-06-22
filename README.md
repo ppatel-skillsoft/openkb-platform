@@ -4,11 +4,18 @@
   <img src="https://docs.pageindex.ai/images/openkb.png" alt="OpenKB (by PageIndex)" />
 </a>
 
-# OpenKB — Open LLM Knowledge Base
-
-<p align="center"><i>Scale to long documents&nbsp; • &nbsp;Reasoning-based retrieval&nbsp; • &nbsp;Native multi-modality&nbsp; • &nbsp;No Vector DB</i></p>
+# OpenKB — Mono-Repo (Archived)
 
 </div>
+
+> ⚠️ **This repository has been split into focused repos. Please use the new repos below.**
+
+## New Repositories
+
+| Repo | Description |
+|------|-------------|
+| [ppatel-skillsoft/openkb-core](https://github.com/ppatel-skillsoft/openkb-core) | The OpenKB Python package — fork of [VectifyAI/OpenKB](https://github.com/VectifyAI/OpenKB). Install via pip. |
+| [ppatel-skillsoft/openkb-platform](https://github.com/ppatel-skillsoft/openkb-platform) | Generator API, Compiler Worker, Docker Compose stack. |
 
 ---
 
