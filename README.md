@@ -1,23 +1,42 @@
 <div align="center">
 
-<a href="https://openkb.ai">
-  <img src="https://docs.pageindex.ai/images/openkb.png" alt="OpenKB (by PageIndex)" />
-</a>
+# OpenKB Platform
 
-# OpenKB — Mono-Repo (Archived)
+**Generator API · Compiler Worker · Docker Compose stack**
+
+Built on [openkb-core](https://github.com/ppatel-skillsoft/openkb-core) — a fork of [VectifyAI/OpenKB](https://github.com/VectifyAI/OpenKB).
 
 </div>
 
-> ⚠️ **This repository has been split into focused repos. Please use the new repos below.**
+---
 
-## New Repositories
+## Overview
+
+`openkb-platform` is the service layer that exposes OpenKB as a multi-tenant API:
+
+- **`generator_api`** — FastAPI service that accepts query requests, spins up per-KB `openkb serve` sidecars, and returns answers
+- **`compiler_worker`** — background worker that polls a Postgres job queue and runs `openkb compile` for each ingested document
+- **Docker Compose** — local-first stack (Postgres, Azurite, generator-api, compiler-worker, openkb sidecar)
+
+## Quick Start
+
+```bash
+cp .env.example .env
+docker compose up -d
+```
+
+## Running Isolation Tests
+
+```bash
+docker compose --profile test run --rm isolation-tests
+```
+
+## Related Repos
 
 | Repo | Description |
 |------|-------------|
-| [ppatel-skillsoft/openkb-core](https://github.com/ppatel-skillsoft/openkb-core) | The OpenKB Python package — fork of [VectifyAI/OpenKB](https://github.com/VectifyAI/OpenKB). Install via pip. |
-| [ppatel-skillsoft/openkb-platform](https://github.com/ppatel-skillsoft/openkb-platform) | Generator API, Compiler Worker, Docker Compose stack. |
+| [openkb-core](https://github.com/ppatel-skillsoft/openkb-core) | The OpenKB Python package (pip dependency of this repo) |
 
----
 
 # 📑 What is OpenKB
 
