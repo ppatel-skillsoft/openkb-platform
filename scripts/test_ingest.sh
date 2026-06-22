@@ -33,7 +33,7 @@ if [[ $# -ge 1 ]]; then
   FILENAME=$(basename "$INPUT_FILE")
 else
   # Default: write a temp Markdown file
-  INPUT_FILE=$(mktemp /tmp/openkb-test-XXXX.md)
+  INPUT_FILE=$(mktemp /tmp/openkb-test-XXXXXXXX)
   FILENAME="hello.md"
   cat > "$INPUT_FILE" <<'EOF'
 # Hello OpenKB
