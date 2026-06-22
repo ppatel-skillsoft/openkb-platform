@@ -121,18 +121,49 @@ services:
       KB_ID: "00000000-0000-0000-0000-000000000001"
       QUEUE_BACKEND: "postgres"
       LOG_LEVEL: "INFO"
+      COMPILER_WORKER_SCRATCH_ROOT: "/scratch"
+    volumes:
+      - compiler_scratch:/scratch
     depends_on:
       postgres:
         condition: service_healthy
       azurite:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "sh", "-c", "ps aux | grep -q '[p]ython -m compiler_worker'"]
+      test: ["CMD", "sh", "-c", "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q compiler_worker"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 15s
     restart: unless-stopped
+
+  # isolation-tests — runs spec 006 sidecar isolation test suite
+  # Only started with: docker compose --profile test run --rm isolation-tests
+  # ---------------------------------------------------------------------------
+  isolation-tests:
+    build:
+      context: .
+      dockerfile: tests/isolation/Dockerfile
+    profiles:
+      - test
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-openkb}:${POSTGRES_PASSWORD:-openkb}@postgres:5432/${POSTGRES_DB:-openkb}"
+      AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1"
+      AZURE_KB_CONTAINER: "openkb"
+      GENERATOR_API_URL: "http://generator-api:8001"
+      QUEUE_BACKEND: "postgres"
+      COMPILER_SCRATCH_ROOT: "/scratch"
+    volumes:
+      - compiler_scratch:/scratch:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      azurite:
+        condition: service_healthy
+      generator-api:
+        condition: service_healthy
+      compiler-worker:
+        condition: service_healthy
 
   generator-api:
     build:
@@ -165,3 +196,6 @@ services:
 volumes:
   pgdata:
   azurite_data:
+  # Shared scratch volume — compiler-worker writes per-job dirs here (R/W),
+  # isolation-tests container reads them (R/O) to assert scratch isolation.
+  compiler_scratch:

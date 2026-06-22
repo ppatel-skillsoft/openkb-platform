@@ -4,7 +4,7 @@ Auto-generated from all feature plans. Last updated: 2026-06-19
 
 ## Active Technologies
 
-- **Language**: Python ≥ 3.10 — `from __future__ import annotations` in every module
+- **Language**: Python 3.12 — `from __future__ import annotations` in every module
 - **CLI**: Click 8.4.0 (`openkb/cli.py`) — all commands use `@cli.command()` + `@click.pass_context`
 - **LLM routing**: LiteLLM 1.87.2 + OpenAI Agents SDK 0.17.3
 - **HTTP API** (feature `001-fastapi-http-api`): FastAPI 0.137.2 + uvicorn[standard] 0.49.0; Pydantic v2 required
@@ -42,7 +42,7 @@ pytest
 pytest tests/unit/test_storage_local.py -v
 
 # Install with API extras (required for openkb serve)
-pip install 'openkb[api]'
+uv run -- uv sync --extra api
 
 # Start API server
 openkb serve --host 0.0.0.0 --port 8000

@@ -49,7 +49,7 @@ class SidecarProcess:
 
         sidecar_env = {
             **os.environ,
-            "OPENKB_STORAGE_BACKEND": "local",
+            "STORAGE_BACKEND": "local",
             "OPENKB_BASE_DIR": str(scratch_dir),
             "OPENAI_API_KEY": llm_api_key,
             # Strip Azure env vars — sidecar must not accidentally write to blob
