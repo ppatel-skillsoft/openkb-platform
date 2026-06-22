@@ -85,7 +85,7 @@ async def query_kb(
             connection_string=settings.azure_storage_connection_string,
             container=container,
             kb_blob_prefix="wiki/",
-            scratch_dir=scratch_dir,
+            scratch_dir=scratch_dir / kb_slug,
         )
 
         # ── Sidecar lifecycle ────────────────────────────────────────────────

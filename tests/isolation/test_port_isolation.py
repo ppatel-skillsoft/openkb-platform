@@ -37,7 +37,7 @@ async def test_concurrent_queries_return_correct_content(
         query_kb(
             fx.generator_api_url,
             fx.kb_a_id,
-            "What is the Hertzsprung-Russell diagram?",
+            "Describe main sequence stars and how they evolve into red giants.",
         ),
         query_kb(
             fx.generator_api_url,

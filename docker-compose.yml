@@ -130,7 +130,7 @@ services:
       azurite:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "sh", "-c", "ps aux | grep -q '[p]ython -m compiler_worker'"]
+      test: ["CMD", "sh", "-c", "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q compiler_worker"]
       interval: 10s
       timeout: 5s
       retries: 3

@@ -11,6 +11,8 @@ import pytest
 
 from tests.isolation.conftest import (
     IsolationFixtures,
+    KB_A_CONTAINER,
+    KB_B_CONTAINER,
     enqueue_job,
     wait_for_job_completion,
 )
@@ -20,8 +22,8 @@ from tests.isolation.helpers.process_helpers import (
     list_scratch_dirs,
 )
 
-KB_A_BLOB = "kb-aaaaaaaa-0000-0000-0000-000000000001/raw/astronomy-intro.md"
-KB_B_BLOB = "kb-bbbbbbbb-0000-0000-0000-000000000002/raw/botany-intro.md"
+KB_A_BLOB = f"{KB_A_CONTAINER}/raw/astronomy-intro.md"
+KB_B_BLOB = f"{KB_B_CONTAINER}/raw/botany-intro.md"
 
 
 @pytest.mark.asyncio
@@ -34,20 +36,21 @@ async def test_concurrent_jobs_use_disjoint_scratch_dirs(
     # Snapshot scratch dirs before enqueueing
     before = set(str(d) for d in list_scratch_dirs(fx.scratch_root))
 
-    # Enqueue KB-A and KB-B jobs concurrently
+    # Enqueue KB-A and KB-B jobs concurrently using compile-only doc IDs
+    # (separate from the query-test doc IDs so compiler status changes don't interfere)
     job_a_id, job_b_id = await asyncio.gather(
         enqueue_job(
-            fx.database_url, fx.kb_a_id, fx.kb_a_doc_id, KB_A_BLOB, "astronomy-intro.md"
+            fx.database_url, fx.kb_a_id, fx.kb_a_compile_doc_id, KB_A_BLOB, "astronomy-intro.md"
         ),
         enqueue_job(
-            fx.database_url, fx.kb_b_id, fx.kb_b_doc_id, KB_B_BLOB, "botany-intro.md"
+            fx.database_url, fx.kb_b_id, fx.kb_b_compile_doc_id, KB_B_BLOB, "botany-intro.md"
         ),
     )
 
     # Wait for both jobs to complete
     status_a, status_b = await asyncio.gather(
-        wait_for_job_completion(fx.database_url, fx.kb_a_doc_id),
-        wait_for_job_completion(fx.database_url, fx.kb_b_doc_id),
+        wait_for_job_completion(fx.database_url, fx.kb_a_compile_doc_id),
+        wait_for_job_completion(fx.database_url, fx.kb_b_compile_doc_id),
     )
 
     # Collect scratch dirs that appeared after enqueueing
@@ -70,10 +73,10 @@ async def test_scratch_dirs_cleaned_after_job(
     before = set(str(d) for d in list_scratch_dirs(fx.scratch_root))
 
     job_id = await enqueue_job(
-        fx.database_url, fx.kb_a_doc_id, fx.kb_a_doc_id, KB_A_BLOB, "astronomy-intro.md"
+        fx.database_url, fx.kb_a_id, fx.kb_a_compile_doc_id, KB_A_BLOB, "astronomy-intro.md"
     )
 
-    status = await wait_for_job_completion(fx.database_url, fx.kb_a_doc_id)
+    status = await wait_for_job_completion(fx.database_url, fx.kb_a_compile_doc_id)
 
     after = list_scratch_dirs(fx.scratch_root)
     new_dirs = [d for d in after if str(d) not in before]

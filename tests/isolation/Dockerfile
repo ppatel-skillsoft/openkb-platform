@@ -11,8 +11,9 @@ COPY pyproject.toml README.md ./
 RUN mkdir -p openkb compiler_worker generator_api \
     && touch openkb/__init__.py compiler_worker/__init__.py generator_api/__init__.py
 
-# Install isolation-tests dependencies via the optional extra
-RUN uv pip install --system --no-cache ".[isolation-tests]"
+# SETUPTOOLS_SCM_PRETEND_VERSION is required because .git is excluded from the
+# build context — hatch-vcs uses setuptools-scm and needs a fallback version.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 uv pip install --system --no-cache ".[isolation-tests]"
 
 # Copy the isolation test sources
 COPY tests/isolation/ ./tests/isolation/
