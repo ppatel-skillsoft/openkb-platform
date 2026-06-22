@@ -61,7 +61,7 @@ if ! docker compose ps --quiet 2>/dev/null | grep -q .; then
   exit 1
 fi
 
-for svc in postgres redis azurite compiler-worker; do
+for svc in postgres azurite compiler-worker; do
   state=$(docker compose ps --format json "$svc" 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('State','unknown'))" 2>/dev/null || echo "unknown")
   if [[ "$state" != "running" ]]; then
     error "Service '$svc' is not running (state: $state). Run: docker compose up -d"
@@ -125,13 +125,9 @@ info "Blob uploaded: ${BLOB_PATH}"
 # ── Step 4: Enqueue job ───────────────────────────────────────────────────────
 section "Step 4 — Enqueue compilation job"
 
-JOB_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-ENQUEUED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-JOB_JSON=$(printf '{"job_id":"%s","kb_id":"%s","document_id":"%s","blob_path":"%s","filename":"%s","enqueued_at":"%s"}' \
-  "$JOB_ID" "$KB_ID" "$DOC_ID" "$BLOB_PATH" "$FILENAME" "$ENQUEUED_AT")
-
-docker compose exec -T redis redis-cli LPUSH compiler:jobs "$JOB_JSON" > /dev/null
-info "Job enqueued (job_id=${JOB_ID})"
+psql -c "INSERT INTO compiler_jobs (kb_id, document_id, blob_path, filename) \
+  VALUES ('${KB_ID}', '${DOC_ID}', '${BLOB_PATH}', '${FILENAME}');" > /dev/null
+info "Job enqueued via Postgres (document_id=${DOC_ID})"
 
 # ── Step 5: Wait for result ───────────────────────────────────────────────────
 section "Step 5 — Waiting up to ${WAIT_SECONDS}s for worker to process job"

@@ -34,6 +34,7 @@ from openkb.db.engine import (
     get_session,
 )
 from openkb.db.metadata import (
+    compiler_jobs,
     documents,
     knowledge_bases,
     metadata,
@@ -51,4 +52,5 @@ __all__ = [
     "knowledge_bases",
     "documents",
     "wiki_pages",
+    "compiler_jobs",
 ]
