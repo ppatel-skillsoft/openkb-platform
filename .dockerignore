@@ -17,8 +17,9 @@ build/
 .env
 .env.local
 
-# Tests and specs
+# Tests and specs (exclude most, but allow isolation-tests Dockerfile + sources)
 tests/
+!tests/isolation/
 specs/
 
 # Docs and misc
