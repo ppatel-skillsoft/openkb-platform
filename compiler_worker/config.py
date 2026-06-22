@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 _REQUIRED = [
     "DATABASE_URL",
-    "REDIS_URL",
     "AZURE_STORAGE_CONNECTION_STRING",
     "SIDECAR_CMD",
     "KB_ID",
@@ -31,6 +30,7 @@ class WorkerConfig:
     sidecar_cmd: str
     kb_id: str
 
+    queue_backend: str = "postgres"  # "postgres" (default) or "redis" (opt-in)
     queue_key: str = "compiler:jobs"
     queue_poll_timeout: int = 5
     sidecar_startup_timeout: int = 15
@@ -52,10 +52,11 @@ class WorkerConfig:
             raise ValueError(f"Missing required env vars: {', '.join(missing)}")
         return cls(
             database_url=os.environ["DATABASE_URL"],
-            redis_url=os.environ["REDIS_URL"],
+            redis_url=os.environ.get("REDIS_URL", ""),
             blob_connection_string=os.environ["AZURE_STORAGE_CONNECTION_STRING"],
             sidecar_cmd=os.environ["SIDECAR_CMD"],
             kb_id=os.environ["KB_ID"],
+            queue_backend=os.environ.get("QUEUE_BACKEND", "postgres"),
             queue_key=os.environ.get("QUEUE_KEY", "compiler:jobs"),
             queue_poll_timeout=int(os.environ.get("QUEUE_POLL_TIMEOUT_S", "5")),
             sidecar_startup_timeout=int(

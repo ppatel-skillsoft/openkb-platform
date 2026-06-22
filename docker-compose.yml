@@ -4,15 +4,15 @@
 #   postgres         — Postgres 15 (Phase 0 data layer; pgdata volume for persistence)
 #   migrate          — Runs `alembic upgrade head` once Postgres is healthy
 #   azurite          — Azure Blob Storage emulator (AzureBlobStorageBackend)
-#   redis            — Redis 7 queue backend for compiler-worker
 #   api              — OpenKB FastAPI service (acts as sidecar for compiler-worker)
-#   compiler-worker  — Background compilation worker
+#   compiler-worker  — Background compilation worker (Postgres SKIP LOCKED queue)
+#   generator-api    — Query / answer service (port 8001)
 #
 # Quick start (Phase 0 DB only):
 #   cp .env.example .env
 #   docker compose up postgres migrate --wait
 #
-# Full five-service stack:
+# Full stack:
 #   cp .env.docker .env          # fill in LLM_API_KEY
 #   docker compose up --wait
 #   curl http://localhost:8000/docs
@@ -72,19 +72,9 @@ services:
       retries: 10
 
   # ---------------------------------------------------------------------------
-  # redis — job queue backend for compiler-worker
+  # redis — REMOVED (replaced by Postgres SKIP LOCKED queue in spec 007)
+  # Opt-in: set QUEUE_BACKEND=redis and restore this block + REDIS_URL env var.
   # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: openkb-redis
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
 
   api:
     build:
@@ -115,7 +105,7 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # compiler-worker — consumes Redis jobs and drives the sidecar
+  # compiler-worker — consumes Postgres SKIP LOCKED jobs and drives the sidecar
   # ---------------------------------------------------------------------------
   compiler-worker:
     build:
@@ -126,17 +116,15 @@ services:
       - .env
     environment:
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-openkb}:${POSTGRES_PASSWORD:-openkb}@postgres:5432/${POSTGRES_DB:-openkb}"
-      REDIS_URL: "redis://redis:6379/0"
       AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1"
       SIDECAR_CMD: "uvicorn openkb.api.app:app"
       KB_ID: "00000000-0000-0000-0000-000000000001"
+      QUEUE_BACKEND: "postgres"
       LOG_LEVEL: "INFO"
     depends_on:
       postgres:
         condition: service_healthy
       azurite:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "sh", "-c", "ps aux | grep -q '[p]ython -m compiler_worker'"]

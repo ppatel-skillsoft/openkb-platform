@@ -29,6 +29,45 @@ from sqlalchemy.types import TIMESTAMP
 metadata = MetaData()
 
 # ---------------------------------------------------------------------------
+# compiler_jobs
+# Postgres-backed FIFO job queue (replaces Redis BRPOP).
+# Enqueued by the API/ingest layer; claimed via SELECT … FOR UPDATE SKIP LOCKED.
+# ---------------------------------------------------------------------------
+compiler_jobs = Table(
+    "compiler_jobs",
+    metadata,
+    Column(
+        "id",
+        UUID(as_uuid=True),
+        primary_key=True,
+        server_default=text("gen_random_uuid()"),
+    ),
+    Column(
+        "kb_id",
+        UUID(as_uuid=True),
+        ForeignKey("knowledge_bases.id"),
+        nullable=False,
+    ),
+    Column(
+        "document_id",
+        UUID(as_uuid=True),
+        ForeignKey("documents.id"),
+        nullable=False,
+    ),
+    Column("blob_path", Text, nullable=False),
+    Column("filename", Text, nullable=False),
+    Column("status", Text, nullable=False, server_default=text("'pending'")),
+    Column(
+        "enqueued_at",
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=text("NOW()"),
+    ),
+    Column("claimed_at", TIMESTAMP(timezone=True), nullable=True),
+    Column("worker_id", Text, nullable=True),
+)
+
+# ---------------------------------------------------------------------------
 # knowledge_bases
 # Root container for a compilation project.
 # ---------------------------------------------------------------------------
@@ -163,4 +202,4 @@ wiki_pages = Table(
     UniqueConstraint("kb_id", "slug", name="uq_wiki_pages_kb_id_slug"),
 )
 
-__all__ = ["metadata", "knowledge_bases", "documents", "wiki_pages"]
+__all__ = ["metadata", "knowledge_bases", "documents", "wiki_pages", "compiler_jobs"]
