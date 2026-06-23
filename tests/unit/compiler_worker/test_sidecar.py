@@ -25,7 +25,6 @@ class TestSidecarStart:
 
         config = WorkerConfig(
             database_url="postgresql+asyncpg://x:x@localhost/x",
-            redis_url="redis://localhost:6379/0",
             blob_connection_string="conn",
             sidecar_cmd="python -m http.server",
             kb_id="test-kb",
@@ -56,7 +55,6 @@ class TestSidecarStart:
 
         config = WorkerConfig(
             database_url="postgresql+asyncpg://x:x@localhost/x",
-            redis_url="redis://localhost:6379/0",
             blob_connection_string="conn",
             sidecar_cmd="python -m http.server",
             kb_id="test-kb",
