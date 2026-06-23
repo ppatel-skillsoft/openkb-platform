@@ -20,6 +20,7 @@ jobs:
       - name: Start services
         run: |
           cp .env.example .env
+          sed -i "s|LLM_API_KEY=your-key-here|LLM_API_KEY=${{ secrets.LLM_API_KEY }}|" .env
           docker compose up -d --wait postgres migrate azurite generator-api compiler-worker
 
       - name: Run isolation tests
