@@ -15,7 +15,6 @@ from compiler_worker.blob_client import BlobStorageClient
 from compiler_worker.config import WorkerConfig
 from compiler_worker.exceptions import (
     BlobNotFoundError,
-    KBNotFoundError,
     SidecarCompileError,
     SidecarTimeoutError,
 )
@@ -62,7 +61,9 @@ async def process_job(
     )
     kb_row = kb_result.fetchone()
     if kb_row is None:
-        raise KBNotFoundError(f"knowledge_bases row not found for kb_id: {job.kb_id}")
+        logger.error("KB not found for job %s: kb_id=%s", job.job_id, job.kb_id)
+        await _mark_failed(db_session, job.document_id, f"knowledge_bases row not found for kb_id: {job.kb_id}")
+        return
 
     compilation_config = kb_row.compilation_config or {}
     model = compilation_config.get("model", "gpt-4o-mini")
@@ -174,8 +175,6 @@ async def process_job(
             final_status.token_cost,
         )
 
-    except KBNotFoundError as exc:
-        await _mark_failed(db_session, job.document_id, str(exc))
     except BlobNotFoundError as exc:
         await _mark_failed(db_session, job.document_id, "Source blob not found in storage")
     except SidecarCompileError as exc:

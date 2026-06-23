@@ -41,39 +41,27 @@ async def test_stale_recovery_marks_compiling_as_failed(async_db_session, seed_k
             status="pending",
         )
     )
-    await async_db_session.flush()
+    # Commit so _recover_stale (which uses the singleton engine) can see the rows.
+    await async_db_session.commit()
 
     # Run stale recovery directly
-    import asyncio
-    from compiler_worker.worker import WorkerLoop
-
-    # We need a minimal config; only database_url matters here
     import os
-    from dataclasses import dataclass
-
-    config_env = {
-        "DATABASE_URL": os.environ.get("DATABASE_URL", "postgresql+asyncpg://openkb:openkb@localhost:5433/openkb"),
-        "REDIS_URL": os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
-        "AZURE_STORAGE_CONNECTION_STRING": os.environ.get(
-            "AZURE_STORAGE_CONNECTION_STRING", "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=x;BlobEndpoint=http://localhost:10000/devstoreaccount1"
-        ),
-        "SIDECAR_CMD": "echo",
-        "KB_ID": kb_id,
-    }
-    for k, v in config_env.items():
-        os.environ.setdefault(k, v)
 
     from compiler_worker.config import WorkerConfig
+    from compiler_worker.worker import WorkerLoop
+
     config = WorkerConfig(
-        database_url=config_env["DATABASE_URL"],
-        redis_url=config_env["REDIS_URL"],
-        blob_connection_string=config_env["AZURE_STORAGE_CONNECTION_STRING"],
+        database_url=os.environ["DATABASE_URL"],
+        blob_connection_string=os.environ["AZURE_STORAGE_CONNECTION_STRING"],
         sidecar_cmd="echo",
         kb_id=kb_id,
     )
 
     loop = WorkerLoop(config)
     await loop._recover_stale()
+
+    # Re-read via a fresh query (expire session cache after external update)
+    async_db_session.expire_all()
 
     # All 3 stale docs should now be 'failed'
     for doc_id in stale_ids:
@@ -92,3 +80,10 @@ async def test_stale_recovery_marks_compiling_as_failed(async_db_session, seed_k
         )
     ).fetchone()
     assert pending_row.status == "pending"
+
+    # Cleanup committed rows
+    from openkb.db import knowledge_bases
+    from sqlalchemy import delete
+    await async_db_session.execute(delete(documents).where(documents.c.kb_id == kb_id))
+    await async_db_session.execute(delete(knowledge_bases).where(knowledge_bases.c.id == kb_id))
+    await async_db_session.commit()

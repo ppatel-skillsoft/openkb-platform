@@ -265,15 +265,26 @@ class TestMigrationIdempotency:
     def test_alembic_upgrade_head_is_idempotent(self, tmp_path):
         """Running alembic upgrade head twice must not error (SC-003)."""
         import os
+        import shutil
+        import openkb.db.migrations
         from pathlib import Path
-        repo_root = str(Path(__file__).parent.parent.parent)
-        env = {**os.environ}  # inherits DATABASE_URL with ssl=false
+
+        repo_root = Path(__file__).parent.parent.parent
+        # Copy migration scripts from the installed openkb-core package so
+        # alembic.ini (script_location = openkb/db/migrations) can find them.
+        migrations_dst = repo_root / "openkb" / "db" / "migrations"
+        if not migrations_dst.exists():
+            src = Path(os.path.dirname(openkb.db.migrations.__file__))
+            migrations_dst.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, migrations_dst, dirs_exist_ok=True)
+
+        env = {**os.environ}  # inherits DATABASE_URL
         result1 = subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             capture_output=True,
             text=True,
             env=env,
-            cwd=repo_root,
+            cwd=str(repo_root),
         )
         assert result1.returncode == 0, (
             f"First alembic upgrade head failed:\n{result1.stderr}"
@@ -283,7 +294,7 @@ class TestMigrationIdempotency:
             capture_output=True,
             text=True,
             env=env,
-            cwd=repo_root,
+            cwd=str(repo_root),
         )
         assert result2.returncode == 0, (
             f"Second alembic upgrade head failed (not idempotent):\n{result2.stderr}"
