@@ -21,3 +21,4 @@ output/
 # Local only
 docs/
 .claude/
+openkb/
