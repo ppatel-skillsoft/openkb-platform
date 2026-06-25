@@ -58,18 +58,22 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Core infrastructure that MUST be complete before ANY user story can be implemented
 
-**⚠️ CRITICAL**: No user story work can begin until this phase is complete
+**CRITICAL**: No user story work can begin until this phase is complete
 
-Examples of foundational tasks (adjust based on your project):
+Examples of foundational tasks for openkb-platform (adjust based on your feature):
 
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
+- [ ] T004 Setup database schema and migrations (Alembic) for any new models
+- [ ] T005 [P] Implement authentication/authorisation middleware or guards
+- [ ] T006 [P] Setup API routing structure (FastAPI router, Pydantic request/response models)
 - [ ] T007 Create base models/entities that all stories depend on
-- [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T008 Configure structured logging (`logging.getLogger(__name__)`) for all new modules
+- [ ] T009 Setup environment configuration via `config.yaml` + `DEFAULT_CONFIG` fallback
+- [ ] T010 Add `/health` and `/ready` endpoints if introducing a new service
+- [ ] T011 [P] Verify `ruff check`, `ruff format --check`, and `bandit -r` all pass on new code
+- [ ] T012 Confirm per-customer storage namespace isolation is enforced in new data paths
+- [ ] T013 [P] Scaffold test files mirroring source tree (`tests/unit/`, `tests/integration/`)
 
-**Checkpoint**: Foundation ready - user story implementation can now begin in parallel
+**Checkpoint**: Foundation ready — user story implementation can now begin in parallel
 
 ---
 
@@ -146,16 +150,18 @@ Examples of foundational tasks (adjust based on your project):
 
 ---
 
-## Phase N: Polish & Cross-Cutting Concerns
+## Phase N: Polish and Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] TXXX [P] Documentation updates in docs/
+- [ ] TXXX [P] Documentation updates in `docs/`; verify `docs/index.md` links are current
 - [ ] TXXX Code cleanup and refactoring
-- [ ] TXXX Performance optimization across all stories
-- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
-- [ ] TXXX Security hardening
-- [ ] TXXX Run quickstart.md validation
+- [ ] TXXX Performance optimisation across all stories
+- [ ] TXXX [P] Additional unit tests (if requested) in `tests/unit/`
+- [ ] TXXX Security hardening: run `bandit -r .` and resolve all findings
+- [ ] TXXX Observability pass: confirm logging, metrics, and tracing coverage
+- [ ] TXXX Isolation audit: confirm no cross-KB data or temp file leakage
+- [ ] TXXX Run `docs/quickstart.md` validation against local Docker Compose stack
 
 ---
 

@@ -6,8 +6,6 @@ import uuid
 import pytest
 import pytest_asyncio
 
-pytest_plugins = ["anyio"]
-
 
 @pytest.fixture(scope="session")
 def worker_config():
@@ -18,10 +16,25 @@ def worker_config():
 
 @pytest_asyncio.fixture
 async def async_db_session():
-    """Yield an async DB session connected to the real test database."""
-    from openkb.db import get_session
-    async with get_session() as session:
+    """Yield an async DB session connected to the real test database.
+
+    Creates a dedicated engine per test to avoid connection pool state leaking
+    across function-scoped event loops (pytest-asyncio asyncio_mode=auto).
+    Uses openkb-core's _extract_ssl_connect_args to strip asyncpg-incompatible
+    sslmode query parameters from the DATABASE_URL.
+    """
+    import os
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+    from sqlalchemy.orm import sessionmaker
+    from openkb.db.engine import _extract_ssl_connect_args
+
+    raw_url = os.environ.get("DATABASE_URL", "")
+    url, connect_args = _extract_ssl_connect_args(raw_url)
+    engine = create_async_engine(url, echo=False, connect_args=connect_args)
+    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
         yield session
+    await engine.dispose()
 
 
 @pytest.fixture
@@ -31,18 +44,10 @@ def blob_client(worker_config):
     return BlobStorageClient(worker_config.blob_connection_string)
 
 
-@pytest.fixture
-def redis_client(worker_config):
-    """Return a connected Redis client."""
-    import redis as redis_lib
-    return redis_lib.from_url(worker_config.redis_url, decode_responses=True)
-
-
 @pytest_asyncio.fixture
 async def seed_kb(async_db_session):
     """Insert a knowledge_bases row and clean up after the test."""
     from openkb.db import knowledge_bases
-    from sqlalchemy import text, delete
 
     kb_id = str(uuid.uuid4())
     container = f"kb-{kb_id}"

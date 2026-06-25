@@ -17,21 +17,38 @@
   the iteration process.
 -->
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+**Language/Version**: Python >= 3.12 (`from __future__ import annotations` in every module)
+**Primary Dependencies**: FastAPI, Pydantic, pytest, ruff, bandit; `openkb-core` at pinned git tag
+**Storage**: PostgreSQL (job queue); Azure Blob / AWS S3 / GCS (document storage, per-customer)
+**Testing**: pytest + pytest-asyncio; ruff + bandit gates MUST pass before PR
+**Target Platform**: Docker Compose (local); AKS or Azure Container Apps (cloud)
+**Project Type**: Multi-tenant SaaS platform (generator_api + compiler_worker services)
+**Performance Goals**: [domain-specific — specify per feature, e.g., p95 query latency]
+**Constraints**: Per-customer data and process isolation MUST be maintained at all times
+**Scale/Scope**: [specify per feature — concurrent KB count, document throughput, etc.]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+Verify the following against `.specify/memory/constitution.md` before proceeding:
+
+| Check | Principle | Status |
+|-------|-----------|--------|
+| Local Docker Compose stack runs end-to-end | I. Local-First | [ ] |
+| No secrets or API keys in source or config files | II. Security | [ ] |
+| `bandit` passes with zero unresolved findings | II. Security / VIII. Test Discipline | [ ] |
+| `ruff check` and `ruff format --check` pass | VIII. Test Discipline | [ ] |
+| All new modules have corresponding test files | VIII. Test Discipline | [ ] |
+| Per-KB data and process isolation is maintained | IV. Isolation | [ ] |
+| Storage backend uses abstract interface (not cloud-specific) | VI. Configurability | [ ] |
+| Logging uses `logging.getLogger(__name__)`, not `print` | III. Observability | [ ] |
+| `/health` and `/ready` endpoints present (if new service) | III. Observability | [ ] |
+| `openkb-core` dependency references a pinned git tag | II. Security | [ ] |
+| Feature branch targets `develop`, not `main` | Git Flow | [ ] |
+| All new behaviour covered by tests (unit + integration) | VIII. Test Discipline | [ ] |
+
+**Violations requiring documented justification** (add to Complexity Tracking below if any):
 
 ## Project Structure
 

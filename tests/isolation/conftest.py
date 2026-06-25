@@ -271,13 +271,13 @@ async def _seed_postgres(conn: asyncpg.Connection) -> None:
 
 
 async def _teardown_postgres(conn: asyncpg.Connection) -> None:
-    # Delete all child records for both KBs in a single pass before removing parents.
-    # Using ANY() ensures wiki_pages for both KBs are gone before knowledge_bases
-    # is touched, avoiding FK violations from interleaved compiler-worker activity.
+    # Delete all child records for both KBs before removing parents.
+    # wiki_pages is deleted last (just before knowledge_bases) to avoid FK
+    # violations from compiler-worker inserting new rows after the first delete.
     kb_ids = [KB_A_ID, KB_B_ID]
-    await conn.execute("DELETE FROM wiki_pages WHERE kb_id = ANY($1::uuid[])", kb_ids)
     await conn.execute("DELETE FROM compiler_jobs WHERE kb_id = ANY($1::uuid[])", kb_ids)
     await conn.execute("DELETE FROM documents WHERE kb_id = ANY($1::uuid[])", kb_ids)
+    await conn.execute("DELETE FROM wiki_pages WHERE kb_id = ANY($1::uuid[])", kb_ids)
     for kb_id in kb_ids:
         await conn.execute("DELETE FROM knowledge_bases WHERE id = $1", kb_id)
 

@@ -74,6 +74,36 @@
 
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
+- How is per-customer data isolation preserved under [concurrent access / failure scenario]?
+- What audit log entries does this feature produce, and are they immutable?
+
+## Security, Observability, and Isolation Notes *(mandatory for features touching data or API)*
+
+<!--
+  Per constitution principles II, III, and IV, every feature touching API endpoints, storage,
+  or multi-tenant data MUST address the following. Delete sections that genuinely do not apply
+  and document why.
+-->
+
+### Security Considerations
+
+- Authentication/authorisation: [describe how this feature enforces auth]
+- Input validation: [describe Pydantic models or validation approach]
+- Secret handling: [confirm no secrets in code; describe env var / secrets manager usage]
+- bandit findings: [confirm bandit passes or list suppressions with rationale]
+
+### Observability Considerations
+
+- Logging: [key log events this feature emits; levels used]
+- Metrics: [any new Prometheus metrics exposed]
+- Tracing: [trace context propagated? which spans are added?]
+- Health/readiness impact: [does this feature affect `/health` or `/ready`?]
+
+### Isolation Considerations
+
+- Per-customer data boundaries: [how is KB/customer namespace enforced?]
+- Process isolation: [any new sidecar lifecycle implications?]
+- Scratch/temp file cleanup: [how are temp artefacts scoped and cleaned up?]
 
 ## Requirements *(mandatory)*
 
