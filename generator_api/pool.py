@@ -8,7 +8,7 @@ import logging
 import shutil
 import time
 
-from generator_api.blob import rebuild_index_md, sync_wiki_tree
+from generator_api.blob import rebuild_index_md, sync_wiki_tree, upload_index_to_blob
 from generator_api.config import Settings
 from generator_api.exceptions import SidecarCrashedError
 from generator_api.sidecar import SidecarProcess
@@ -217,6 +217,13 @@ class SidecarPool:
         wiki_dir = scratch_dir / kb_slug / "wiki"
         if wiki_dir.is_dir():
             rebuild_index_md(wiki_dir)
+            # Write the rebuilt index back to blob storage so it persists
+            # across container restarts and is visible in storage explorers.
+            await upload_index_to_blob(
+                self._settings.azure_storage_connection_string,
+                container,
+                wiki_dir,
+            )
 
         logger.info("Sidecar ready for kb_id=%s on port %s", kb_id, entry.process._port)
 
