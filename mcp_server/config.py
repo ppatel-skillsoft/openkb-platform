@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     # ── Timeouts ─────────────────────────────────────────────────────────────
     # query_timeout_s covers the full sidecar round-trip (blob sync + LLM call)
     query_timeout_s: float = 300.0
-    # list_kbs_timeout_s is a fast DB aggregation query
-    list_kbs_timeout_s: float = 10.0
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 
