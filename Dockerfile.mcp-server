@@ -1,0 +1,48 @@
+# syntax=docker/dockerfile:1
+# Multi-stage image for the mcp-server service.
+# Exposes the FastMCP Streamable HTTP MCP server on port 8002.
+#
+# Build:  docker build -f Dockerfile.mcp-server -t openkb-mcp-server .
+# Run:    docker run --env-file .env -p 8002:8002 openkb-mcp-server
+
+# ── builder ──────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv
+
+# git is required to fetch openkb-core from the pinned git tag in pyproject.toml
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml uv.lock README.md ./
+COPY mcp_server/ ./mcp_server/
+# SETUPTOOLS_SCM_PRETEND_VERSION is required because .git is excluded from the build context.
+RUN SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0 uv sync --extra mcp --no-dev --frozen
+
+# ── runtime ──────────────────────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# curl is required for Docker Compose HEALTHCHECK
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
+# Copy the virtual env from the builder stage
+COPY --from=builder /app/.venv /app/.venv
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy the application source
+COPY mcp_server/ ./mcp_server/
+
+# Non-root user for safety
+RUN useradd -m openkb
+USER openkb
+
+EXPOSE 8002
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=6 \
+    CMD curl -sf http://localhost:8002/health || exit 1
+
+CMD ["uvicorn", "mcp_server.app:http_app", "--host", "0.0.0.0", "--port", "8002"]
