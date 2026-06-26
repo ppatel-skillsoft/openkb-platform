@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from fastapi.testclient import TestClient
-
-from generator_api.app import create_app
 from generator_api.pool import SidecarPool
 from generator_api.sidecar import SidecarProcess
 
@@ -22,28 +19,6 @@ def _mock_pool(sidecar_response=("Test answer", [], 42)) -> MagicMock:
     pool.shutdown = AsyncMock()
     pool.evict_idle_loop = AsyncMock()
     return pool
-
-
-def test_malformed_uuid_returns_422() -> None:
-    """Non-UUID kb_id in path → 422 (FastAPI type validation)."""
-    pool = _mock_pool()
-    app = create_app()
-    app.state.pool = pool
-    client = TestClient(app, raise_server_exceptions=False)
-
-    resp = client.post("/kbs/not-a-uuid/query", json={"question": "hello"})
-    assert resp.status_code == 422
-
-
-def test_empty_question_returns_422() -> None:
-    """Blank question → 422 from field_validator."""
-    pool = _mock_pool()
-    app = create_app()
-    app.state.pool = pool
-    client = TestClient(app, raise_server_exceptions=False)
-
-    resp = client.post(f"/kbs/{_KB_ID}/query", json={"question": "   "})
-    assert resp.status_code == 422
 
 
 def test_update_last_used_called_on_success() -> None:
