@@ -200,13 +200,8 @@ class SidecarPool:
             timeout=self._settings.sidecar_startup_timeout,
         )
 
-        # Rebuild the aggregate index.md — each compiler job writes a per-job
-        # index that only reflects its own session; this rebuilds from all pages.
-        wiki_dir = scratch_dir / kb_slug / "wiki"
-        if wiki_dir.is_dir():
-            rebuild_index_md(wiki_dir)
-
-        # Start sidecar subprocess and send /kb/init
+        # Start sidecar subprocess and send /kb/init (which scaffolds .openkb/
+        # and writes the empty INDEX_SEED to wiki/index.md).
         await asyncio.to_thread(
             entry.process.start,
             scratch_dir,
@@ -215,6 +210,13 @@ class SidecarPool:
             self._settings.sidecar_startup_timeout,
         )
         await asyncio.to_thread(entry.process.init, kb_slug)
+
+        # Rebuild the aggregate index.md AFTER init — /kb/init writes INDEX_SEED
+        # (empty template) because .openkb/ is not synced from blob storage.
+        # Rebuilding here ensures the sidecar sees all compiled wiki pages.
+        wiki_dir = scratch_dir / kb_slug / "wiki"
+        if wiki_dir.is_dir():
+            rebuild_index_md(wiki_dir)
 
         logger.info("Sidecar ready for kb_id=%s on port %s", kb_id, entry.process._port)
 
