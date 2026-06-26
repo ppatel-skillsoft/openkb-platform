@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 
 logger = logging.getLogger(__name__)
@@ -64,7 +63,10 @@ class BlobStorageClient:
             logger.debug("Created blob container: %s", container)
         except Exception as exc:
             # ResourceExistsError is expected on subsequent calls; swallow it.
-            if "ContainerAlreadyExists" in type(exc).__name__ or "already exists" in str(exc).lower():
+            if (
+                "ContainerAlreadyExists" in type(exc).__name__
+                or "already exists" in str(exc).lower()
+            ):
                 logger.debug("Blob container already exists: %s", container)
             else:
                 raise

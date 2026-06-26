@@ -122,6 +122,8 @@ services:
       QUEUE_BACKEND: "postgres"
       LOG_LEVEL: "INFO"
       COMPILER_WORKER_SCRATCH_ROOT: "/scratch"
+      # URL for fire-and-forget invalidation notifications after document compilation
+      GENERATOR_API_URL: "http://generator-api:8001"
     volumes:
       - compiler_scratch:/scratch
     depends_on:
@@ -180,6 +182,11 @@ services:
       AZURE_KB_CONTAINER: "openkb"
       GENERATOR_HOST: "0.0.0.0"
       GENERATOR_PORT: "8001"
+      # Sidecar pool tuning (defaults shown)
+      GENERATOR_SIDECAR_IDLE_TTL_SECONDS: "1800"   # evict sidecar after 30 min idle
+      GENERATOR_SIDECAR_STARTUP_TIMEOUT: "30"       # seconds for sidecar cold start
+      GENERATOR_REQUEST_TIMEOUT: "120"              # seconds for LLM query only
+      GENERATOR_PREWARM_ON_STARTUP: "false"         # pre-warm all ready KBs on boot
     depends_on:
       postgres:
         condition: service_healthy

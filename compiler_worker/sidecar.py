@@ -52,8 +52,10 @@ class SidecarProcess:
         self._base_url = f"http://127.0.0.1:{self._port}"
 
         cmd = shlex.split(config.sidecar_cmd) + [
-            "--host", "127.0.0.1",
-            "--port", str(self._port),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(self._port),
         ]
         logger.info("Starting sidecar on port %d: %s", self._port, " ".join(cmd))
         self._process = subprocess.Popen(cmd, cwd=str(scratch_dir))
@@ -64,7 +66,11 @@ class SidecarProcess:
             try:
                 resp = httpx.get(f"{self._base_url}/health", timeout=2.0)
                 if resp.status_code == 200:
-                    logger.info("Sidecar healthy on port %d after %d attempts", self._port, attempt + 1)
+                    logger.info(
+                        "Sidecar healthy on port %d after %d attempts",
+                        self._port,
+                        attempt + 1,
+                    )
                     return
             except (httpx.ConnectError, httpx.TimeoutException):
                 pass
@@ -121,7 +127,9 @@ class SidecarProcess:
             error=data.get("error"),
         )
         if status.status == "failed":
-            raise SidecarCompileError(status.error or "Sidecar reported compilation failure")
+            raise SidecarCompileError(
+                status.error or "Sidecar reported compilation failure"
+            )
         return status
 
     # ------------------------------------------------------------------

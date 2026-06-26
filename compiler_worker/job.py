@@ -6,6 +6,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import httpx
 from azure.core.exceptions import ResourceNotFoundError as AzureNotFoundError
 from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -62,7 +63,11 @@ async def process_job(
     kb_row = kb_result.fetchone()
     if kb_row is None:
         logger.error("KB not found for job %s: kb_id=%s", job.job_id, job.kb_id)
-        await _mark_failed(db_session, job.document_id, f"knowledge_bases row not found for kb_id: {job.kb_id}")
+        await _mark_failed(
+            db_session,
+            job.document_id,
+            f"knowledge_bases row not found for kb_id: {job.kb_id}",
+        )
         return
 
     compilation_config = kb_row.compilation_config or {}
@@ -88,9 +93,11 @@ async def process_job(
 
     try:
         blob_client.download_to_file(job.blob_path, dest_file)
-    except AzureNotFoundError as exc:
+    except AzureNotFoundError:
         logger.error("Source blob not found for job %s: %s", job.job_id, job.blob_path)
-        await _mark_failed(db_session, job.document_id, "Source blob not found in storage")
+        await _mark_failed(
+            db_session, job.document_id, "Source blob not found in storage"
+        )
         shutil.rmtree(scratch_dir, ignore_errors=True)
         return
 
@@ -136,7 +143,8 @@ async def process_job(
 
             # Upsert wiki_pages row
             await db_session.execute(
-                pg_insert(wiki_pages).values(
+                pg_insert(wiki_pages)
+                .values(
                     kb_id=job.kb_id,
                     page_type=page.page_type,
                     slug=page.slug,
@@ -145,7 +153,8 @@ async def process_job(
                     last_compiled_at=text("NOW()"),
                     created_at=text("NOW()"),
                     updated_at=text("NOW()"),
-                ).on_conflict_do_update(
+                )
+                .on_conflict_do_update(
                     constraint="uq_wiki_pages_kb_id_slug",
                     set_={
                         "page_type": page.page_type,
@@ -175,8 +184,23 @@ async def process_job(
             final_status.token_cost,
         )
 
-    except BlobNotFoundError as exc:
-        await _mark_failed(db_session, job.document_id, "Source blob not found in storage")
+        # Fire-and-forget: notify generator-api to mark this KB's sidecar stale.
+        # Errors are logged as warnings and never cause the job to fail.
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{config.generator_api_url}/kbs/{job.kb_id}/invalidate",
+                    json={"document_id": str(job.document_id)},
+                )
+        except Exception:
+            logger.warning(
+                "Failed to notify generator_api of invalidation for kb_id=%s", job.kb_id
+            )
+
+    except BlobNotFoundError:
+        await _mark_failed(
+            db_session, job.document_id, "Source blob not found in storage"
+        )
     except SidecarCompileError as exc:
         await _mark_failed(db_session, job.document_id, exc.reason)
     except SidecarTimeoutError as exc:

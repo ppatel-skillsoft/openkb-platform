@@ -17,9 +17,12 @@ class Settings(BaseSettings):
     # ── LLM (forwarded to sidecar subprocess) ────────────────────────────────
     llm_api_key: str = ""  # Warn if empty; service starts but queries will fail
 
-    # ── Sidecar ──────────────────────────────────────────────────────────────
-    sidecar_startup_timeout: int = 30   # Seconds to wait for sidecar readiness
-    generator_request_timeout: int = 300  # Seconds before HTTP 504
+    # ── Sidecar pool ─────────────────────────────────────────────────────────
+    sidecar_startup_timeout: int = 30
+    # Governs the query call only; sidecar startup is bounded by sidecar_startup_timeout
+    generator_request_timeout: int = 120
+    sidecar_idle_ttl_seconds: int = 1800  # Evict sidecar after this many seconds idle
+    prewarm_on_startup: bool = False  # Pre-warm all ready KBs at startup
 
     # ── Scratch Storage ───────────────────────────────────────────────────────
     scratch_dir_root: Path = Path("/tmp/generator-scratch")

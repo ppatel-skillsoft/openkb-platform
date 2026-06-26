@@ -27,18 +27,25 @@ def _allocate_port() -> int:
 
 
 class SidecarProcess:
-    """Per-request sidecar subprocess managing the full query lifecycle."""
+    """Long-lived sidecar subprocess managed by SidecarPool."""
 
     def __init__(self) -> None:
         self._process: subprocess.Popen | None = None
         self._port: int | None = None
         self._base_url: str | None = None
+        self.last_used_at: float = time.monotonic()
+
+    def is_healthy(self) -> bool:
+        """Return True if the subprocess is running (non-blocking poll)."""
+        return self._process is not None and self._process.poll() is None
 
     # ------------------------------------------------------------------
     # Startup
     # ------------------------------------------------------------------
 
-    def start(self, scratch_dir: Path, kb_slug: str, llm_api_key: str, startup_timeout: int) -> None:
+    def start(
+        self, scratch_dir: Path, kb_slug: str, llm_api_key: str, startup_timeout: int
+    ) -> None:
         """Spawn the sidecar and wait for it to serve /openapi.json.
 
         Raises ``SidecarStartError`` if the sidecar is not ready within
@@ -96,7 +103,9 @@ class SidecarProcess:
             timeout=30.0,
         )
         if resp.status_code not in (200, 409):  # 409 = already exists, idempotent
-            raise SidecarQueryError(f"Sidecar init failed ({resp.status_code}): {resp.text}")
+            raise SidecarQueryError(
+                f"Sidecar init failed ({resp.status_code}): {resp.text}"
+            )
 
     def query(self, kb_slug: str, question: str) -> tuple[str, list, int]:
         """Send POST /kb/query and return (answer, citations, tokens_used)."""
@@ -106,9 +115,15 @@ class SidecarProcess:
             timeout=300.0,
         )
         if resp.status_code != 200:
-            raise SidecarQueryError(f"Sidecar query failed ({resp.status_code}): {resp.text}")
+            raise SidecarQueryError(
+                f"Sidecar query failed ({resp.status_code}): {resp.text}"
+            )
         data = resp.json()
-        return data.get("answer", ""), data.get("citations", []), data.get("tokens_used", 0)
+        return (
+            data.get("answer", ""),
+            data.get("citations", []),
+            data.get("tokens_used", 0),
+        )
 
     # ------------------------------------------------------------------
     # Teardown

@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Protocol
 
 import sqlalchemy as sa
 
@@ -87,10 +86,19 @@ def parse_job(raw: str) -> CompilationJob | None:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        logger.error("Discarding malformed queue message (invalid JSON): %s — %s", raw, exc)
+        logger.error(
+            "Discarding malformed queue message (invalid JSON): %s — %s", raw, exc
+        )
         return None
 
-    required_fields = ("job_id", "kb_id", "document_id", "blob_path", "filename", "enqueued_at")
+    required_fields = (
+        "job_id",
+        "kb_id",
+        "document_id",
+        "blob_path",
+        "filename",
+        "enqueued_at",
+    )
     missing = [f for f in required_fields if f not in data]
     if missing:
         logger.error(
