@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from azure.core.exceptions import AzureError
@@ -9,6 +10,88 @@ from azure.storage.blob.aio import BlobServiceClient
 from generator_api.exceptions import BlobSyncError
 
 logger = logging.getLogger(__name__)
+
+_FM_PATTERN = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
+_KV_PATTERN = re.compile(r'^(\w+):\s*"?(.*?)"?\s*$')
+
+
+def _parse_frontmatter(text: str) -> dict[str, str]:
+    """Extract key:value pairs from YAML frontmatter (simple scalar values only)."""
+    m = _FM_PATTERN.match(text)
+    if not m:
+        return {}
+    result: dict[str, str] = {}
+    for line in m.group(1).splitlines():
+        kv = _KV_PATTERN.match(line)
+        if kv:
+            result[kv.group(1)] = kv.group(2).strip('"').strip("'")
+    return result
+
+
+def rebuild_index_md(wiki_dir: Path) -> None:
+    """Rebuild ``index.md`` from all synced wiki pages.
+
+    Each compiler-worker job writes a per-job ``index.md`` that only reflects
+    the single document compiled in that session.  When the generator-api syncs
+    all blobs, it gets the stale single-doc index.  This function regenerates a
+    correct aggregate index by scanning every page in the wiki tree.
+
+    Args:
+        wiki_dir: Path to the local ``wiki/`` directory (e.g.
+            ``scratch_dir/kb_slug/wiki``).
+    """
+    sections: dict[str, list[str]] = {
+        "Documents": [],
+        "Concepts": [],
+        "Entities": [],
+        "Explorations": [],
+    }
+
+    subdirs = {
+        "Documents": (wiki_dir / "summaries", "summaries"),
+        "Concepts": (wiki_dir / "concepts", "concepts"),
+        "Entities": (wiki_dir / "entities", "entities"),
+        "Explorations": (wiki_dir / "explorations", "explorations"),
+    }
+
+    for section, (subdir, prefix) in subdirs.items():
+        if not subdir.is_dir():
+            continue
+        for path in sorted(subdir.glob("*.md")):
+            slug = path.stem
+            try:
+                fm = _parse_frontmatter(path.read_text(encoding="utf-8"))
+            except OSError:
+                fm = {}
+            description = fm.get("description", "")
+            if section == "Documents":
+                doc_type = fm.get("doc_type", "short")
+                sections[section].append(
+                    f"- [[{prefix}/{slug}]] ({doc_type}) — {description}"
+                )
+            elif section == "Entities":
+                entity_type = fm.get("type", "")
+                sections[section].append(
+                    f"- [[{prefix}/{slug}]] ({entity_type}) — {description}"
+                )
+            else:
+                sections[section].append(f"- [[{prefix}/{slug}]] — {description}")
+
+    lines: list[str] = ["# Knowledge Base Index\n"]
+    for section, items in sections.items():
+        lines.append(f"## {section}")
+        lines.extend(items)
+        lines.append("")
+
+    (wiki_dir / "index.md").write_text("\n".join(lines), encoding="utf-8")
+    counts = {s: len(items) for s, items in sections.items()}
+    logger.info(
+        "Rebuilt index.md: %d docs, %d concepts, %d entities, %d explorations",
+        counts["Documents"],
+        counts["Concepts"],
+        counts["Entities"],
+        counts["Explorations"],
+    )
 
 
 async def check_azurite(connection_string: str) -> str:
@@ -78,4 +161,10 @@ async def sync_wiki_tree(
             f"Wiki is empty for KB — no blobs found under {container}/{prefix}"
         )
 
-    logger.info("Synced %d wiki blobs from %s/%s → %s", downloaded, container, prefix, scratch_dir)
+    logger.info(
+        "Synced %d wiki blobs from %s/%s → %s",
+        downloaded,
+        container,
+        prefix,
+        scratch_dir,
+    )

@@ -5,14 +5,13 @@ import logging
 import shutil
 import time
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from generator_api.blob import BlobSyncError, sync_wiki_tree
+from generator_api.blob import BlobSyncError, rebuild_index_md, sync_wiki_tree
 from generator_api.config import get_settings
 from generator_api.db import get_db
 from generator_api.exceptions import KBNotFoundError, KBNotReadyError
@@ -87,6 +86,9 @@ async def query_kb(
             kb_blob_prefix="wiki/",
             scratch_dir=scratch_dir / kb_slug,
         )
+        # Rebuild the aggregate index.md from all synced pages; each compiler
+        # job writes a per-job index that only reflects its own session.
+        rebuild_index_md(scratch_dir / kb_slug / "wiki")
 
         # ── Sidecar lifecycle ────────────────────────────────────────────────
         await asyncio.to_thread(
@@ -103,9 +105,17 @@ async def query_kb(
             timeout=settings.generator_request_timeout,
         )
 
-        return QueryResponse(answer=answer, citations=citations, tokens_used=tokens_used)
+        return QueryResponse(
+            answer=answer, citations=citations, tokens_used=tokens_used
+        )
 
-    except (KBNotFoundError, KBNotReadyError, BlobSyncError, SidecarStartError, SidecarQueryError):
+    except (
+        KBNotFoundError,
+        KBNotReadyError,
+        BlobSyncError,
+        SidecarStartError,
+        SidecarQueryError,
+    ):
         status_code = 500  # will be overridden by exception handlers
         raise
     except asyncio.TimeoutError:
