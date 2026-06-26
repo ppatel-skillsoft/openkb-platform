@@ -22,3 +22,6 @@ output/
 docs/
 .claude/
 openkb/
+
+# Marketing KB documents — real-world domain content, not committed to git
+marketing_kb/

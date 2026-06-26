@@ -87,6 +87,16 @@ isolation-tests = [
     "psutil==6.1.1",
 ]
 
+# mcp extra — adds FastMCP HTTP server and tenacity retry library.
+# fastmcp 3.4.2 is the first stable release with composable lifespan,
+# custom_route health endpoints, and full Streamable HTTP transport.
+# tenacity 9.1.2 provides @retry with exponential backoff used by the
+# ingestion script to handle transient upload and rate-limit errors.
+mcp = [
+    "fastmcp==3.4.2",
+    "tenacity==9.1.2",
+]
+
 [tool.hatch.metadata]
 allow-direct-references = true
 
@@ -95,4 +105,4 @@ source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 # openkb is now in openkb-core; platform only ships the service packages
-packages = ["compiler_worker", "generator_api"]
+packages = ["compiler_worker", "generator_api", "mcp_server"]

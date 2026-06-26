@@ -100,7 +100,7 @@ class SidecarProcess:
         """Send ``GET /status`` and return a ``SidecarStatus``. Raises on non-2xx."""
         from compiler_worker.exceptions import SidecarCompileError
 
-        resp = httpx.get(f"{self._base_url}/status", timeout=10.0)
+        resp = httpx.get(f"{self._base_url}/status", timeout=60.0)
         resp.raise_for_status()
         data = resp.json()
 
