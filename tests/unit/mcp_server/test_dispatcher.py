@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from mcp_server.dispatcher import KBDispatcher, _KBRecord, build_kb_app, resolve_kb_by_slug
+from mcp_server.dispatcher import (
+    KBDispatcher,
+    _KBRecord,
+    _ManagedApp,
+    build_kb_app,
+    resolve_kb_by_slug,
+)
 from mcp_server.exceptions import GeneratorAPIError, KBNotFoundError, KBNotReadyError
 
 _SLUG = "marketing-kb"
@@ -124,7 +130,8 @@ async def test_dispatcher_caches_app_on_second_call() -> None:
     mock_app = AsyncMock()
 
     with patch("mcp_server.dispatcher.resolve_kb_by_slug", return_value=_KB_RECORD), \
-         patch("mcp_server.dispatcher.build_kb_app", return_value=mock_app) as mock_build:
+         patch("mcp_server.dispatcher.build_kb_app", return_value=mock_app) as mock_build, \
+         patch.object(_ManagedApp, "start", new_callable=AsyncMock):
 
         scope = {"type": "http", "method": "POST", "path": f"/{_SLUG}/mcp", "query_string": b""}
 
@@ -146,7 +153,8 @@ async def test_dispatcher_strips_slug_prefix_from_path() -> None:
         received_scopes.append(scope)
 
     with patch("mcp_server.dispatcher.resolve_kb_by_slug", return_value=_KB_RECORD), \
-         patch("mcp_server.dispatcher.build_kb_app", return_value=fake_app):
+         patch("mcp_server.dispatcher.build_kb_app", return_value=fake_app), \
+         patch.object(_ManagedApp, "start", new_callable=AsyncMock):
 
         scope = {
             "type": "http",

@@ -71,6 +71,20 @@ async def resolve_kb_by_slug(slug: str) -> _KBRecord | None:
 # ---------------------------------------------------------------------------
 
 
+def _make_lifespan(generator_api_url: str, query_timeout_s: float):
+    """Return an async context manager that provides an httpx.AsyncClient."""
+
+    @asynccontextmanager
+    async def _lifespan(server: FastMCP):
+        async with httpx.AsyncClient(
+            base_url=generator_api_url,
+            timeout=httpx.Timeout(query_timeout_s),
+        ) as client:
+            yield {"http_client": client}
+
+    return _lifespan
+
+
 def build_kb_app(
     kb: _KBRecord,
     generator_api_url: str,
@@ -82,14 +96,6 @@ def build_kb_app(
     kb_id = kb.kb_id
     kb_name = kb.name
 
-    @asynccontextmanager
-    async def _lifespan(server: FastMCP):
-        async with httpx.AsyncClient(
-            base_url=generator_api_url,
-            timeout=httpx.Timeout(query_timeout_s),
-        ) as client:
-            yield {"http_client": client}
-
     instructions = f"You are connected to the '{kb_name}' knowledge base."
     if kb.description:
         instructions += f" {kb.description}"
@@ -97,7 +103,7 @@ def build_kb_app(
         " Use the ask tool to get grounded answers with citations from the knowledge base."
     )
 
-    mcp = FastMCP(kb_name, instructions=instructions, lifespan=_lifespan)
+    mcp = FastMCP(kb_name, instructions=instructions, lifespan=_make_lifespan(generator_api_url, query_timeout_s))
 
     @mcp.tool(
         annotations=ToolAnnotations(
@@ -159,6 +165,59 @@ def build_kb_app(
 
 
 # ---------------------------------------------------------------------------
+# Lifespan manager
+# ---------------------------------------------------------------------------
+
+
+class _ManagedApp:
+    """Wraps a FastMCP ASGI app and runs its ASGI lifespan as a background task.
+
+    FastMCP's ``StreamableHTTPSessionManager`` requires its anyio task group to
+    be initialised (via the Starlette lifespan startup event) before it can
+    serve requests.  Without this wrapper the app returns 500 on every call.
+
+    Lifecycle::
+
+        managed = _ManagedApp(raw_app)
+        await managed.start()   # sends lifespan.startup, waits for .complete
+        await managed(scope, receive, send)  # normal HTTP requests
+    """
+
+    def __init__(self, app: Any) -> None:
+        self._app = app
+        self._startup_done: asyncio.Event = asyncio.Event()
+        self._shutdown_event: asyncio.Event = asyncio.Event()
+        self._lifespan_task: asyncio.Task[None] | None = None
+        self._startup_event_sent: bool = False
+
+    async def start(self) -> None:
+        """Boot the sub-app lifespan and wait until startup is complete."""
+
+        async def receive() -> dict:
+            if not self._startup_event_sent:
+                self._startup_event_sent = True
+                return {"type": "lifespan.startup"}
+            await self._shutdown_event.wait()
+            return {"type": "lifespan.shutdown"}
+
+        async def send(message: dict) -> None:
+            if message["type"] == "lifespan.startup.complete":
+                self._startup_done.set()
+
+        scope: dict = {"type": "lifespan", "asgi": {"version": "3.0"}}
+        self._lifespan_task = asyncio.create_task(self._app(scope, receive, send))
+
+        try:
+            await asyncio.wait_for(self._startup_done.wait(), timeout=10.0)
+        except TimeoutError:
+            self._lifespan_task.cancel()
+            raise RuntimeError("FastMCP sub-app lifespan startup timed out")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self._app(scope, receive, send)
+
+
+# ---------------------------------------------------------------------------
 # Dispatcher ASGI app
 # ---------------------------------------------------------------------------
 
@@ -167,8 +226,8 @@ class KBDispatcher:
     """ASGI app that routes ``/{kb_slug}/mcp[/...]`` to per-KB FastMCP instances.
 
     On first request for a slug the dispatcher resolves the KB from Postgres,
-    builds a FastMCP app for it, and caches the result.  Subsequent requests
-    hit the cache directly.
+    builds a FastMCP app for it, starts its lifespan, and caches the result.
+    Subsequent requests hit the cache directly.
 
     Unknown slugs or slugs with no compiled documents return HTTP 404.
     """
@@ -176,10 +235,10 @@ class KBDispatcher:
     def __init__(self, generator_api_url: str, query_timeout_s: float) -> None:
         self._generator_api_url = generator_api_url
         self._query_timeout_s = query_timeout_s
-        self._apps: dict[str, Any] = {}
+        self._apps: dict[str, _ManagedApp] = {}
         self._lock = asyncio.Lock()
 
-    async def _get_or_create(self, slug: str) -> Any | None:
+    async def _get_or_create(self, slug: str) -> _ManagedApp | None:
         if slug in self._apps:
             return self._apps[slug]
         async with self._lock:
@@ -188,10 +247,12 @@ class KBDispatcher:
             kb = await resolve_kb_by_slug(slug)
             if kb is None:
                 return None
-            app = build_kb_app(kb, self._generator_api_url, self._query_timeout_s)
-            self._apps[slug] = app
-            logger.info("Registered MCP app for kb_slug=%s name=%r", slug, kb.name)
-            return app
+            raw_app = build_kb_app(kb, self._generator_api_url, self._query_timeout_s)
+            managed = _ManagedApp(raw_app)
+            await managed.start()
+            self._apps[slug] = managed
+            logger.info("Started FastMCP app for kb_slug=%s name=%r", slug, kb.name)
+            return managed
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] not in ("http", "websocket"):
