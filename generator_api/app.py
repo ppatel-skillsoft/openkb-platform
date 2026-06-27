@@ -13,6 +13,7 @@ from generator_api.config import get_settings
 from generator_api.db import check_postgres
 from generator_api.exceptions import (
     BlobSyncError,
+    DocumentNotFoundError,
     KBNotFoundError,
     KBNotReadyError,
     SidecarQueryError,
@@ -80,6 +81,10 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(KBNotFoundError)
     async def _kb_not_found(request: Request, exc: KBNotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(DocumentNotFoundError)
+    async def _doc_not_found(request: Request, exc: DocumentNotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
 
     @app.exception_handler(KBNotReadyError)

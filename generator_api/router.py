@@ -12,10 +12,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from generator_api.blob import BlobSyncError, rebuild_index_md, sync_wiki_tree
-from generator_api.config import get_settings
+from generator_api.config import get_settings, Settings
 from generator_api.db import get_db
 from generator_api.exceptions import KBNotFoundError, KBNotReadyError
 from generator_api.models import QueryRequest, QueryResponse
+from generator_api.service import service_delete_document
 from generator_api.sidecar import SidecarProcess, SidecarStartError, SidecarQueryError
 
 logger = logging.getLogger(__name__)
@@ -135,3 +136,24 @@ async def query_kb(
             elapsed_ms,
             status_code,
         )
+
+
+@router.delete("/kbs/{kb_id}/documents/{doc_id}", status_code=204)
+async def delete_document(
+    kb_id: uuid.UUID,
+    doc_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Remove a document from a knowledge base.
+
+    Soft-deletes the document row, deletes its summary blob, and rebuilds
+    the KB index.  No LLM calls are made.  Returns 204 on success and on
+    repeat calls (idempotent).
+    """
+    await service_delete_document(
+        kb_id=str(kb_id),
+        doc_id=str(doc_id),
+        db=db,
+        connection_string=settings.azure_storage_connection_string,
+    )

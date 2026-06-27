@@ -1,6 +1,6 @@
 # OpenKB Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-26
+Auto-generated from all feature plans. Last updated: 2026-06-27
 
 ## Active Technologies
 
@@ -82,6 +82,7 @@ ruff check openkb/
 
 ## Recent Changes
 
+- 011-delete-document-endpoint: Added `DELETE /kbs/{kb_id}/documents/{doc_id}` — soft-delete + summary blob removal + index rebuild; zero LLM calls
 - 001-fastapi-http-api: Added StorageBackend abstraction, FastAPI service layer, `openkb serve` command
 - 009-fastmcp-kb-server: Added FastMCP 3.4.2 MCP server, ingestion script with rate-limit strategy, Docker Compose `mcp-server` service on port 8002
 

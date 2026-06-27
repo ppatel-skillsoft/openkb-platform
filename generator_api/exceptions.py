@@ -13,6 +13,13 @@ class KBNotReadyError(Exception):
         self.kb_id = kb_id
 
 
+class DocumentNotFoundError(Exception):
+    def __init__(self, doc_id: str, kb_id: str) -> None:
+        super().__init__(f"Document {doc_id} not found in knowledge base {kb_id}")
+        self.doc_id = doc_id
+        self.kb_id = kb_id
+
+
 class BlobSyncError(Exception):
     """Raised when the wiki tree cannot be synced from Blob Storage."""
 
