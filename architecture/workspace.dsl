@@ -5,9 +5,9 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
     model {
 
         consumer = person "KB Consumer" "Uses an AI agent or MCP host to query a knowledge base in natural language"
-        developer = person "Developer / KB Admin" "Ingests source documents and manages knowledge bases via scripts and API"
+        developer = person "Developer / KB Admin" "Seeds knowledge bases and manages documents"
 
-        openai = softwareSystem "OpenAI API" "LLM inference used during KB compilation (embeddings and summarisation)" {
+        openai = softwareSystem "OpenAI API" "LLM inference used during KB compilation (summarisation and embeddings)" {
             tags "ExternalSystem"
         }
 
@@ -18,35 +18,35 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
         openkb = softwareSystem "OpenKB Platform" "Compiles domain documents into queryable knowledge bases and exposes them via MCP" {
             tags "PrimarySystem"
 
-            mcpServer = container "MCP Server" "Provides a per-KB MCP endpoint. Lazily creates one FastMCP app per KB slug and manages its ASGI lifespan. Exposes a single ask tool." "Python 3.12 / FastMCP 3.4 — :8002" {
+            mcpServer = container "MCP Server" "Routes /{kb_slug}/mcp to a lazily-created FastMCP instance per KB. Manages ASGI lifespan via _ManagedApp. Exposes a single ask(question) tool per KB. GET /health checks Postgres." "Python 3.12 / FastMCP 3.4 / Starlette — :8002" {
                 tags "AppContainer"
             }
 
-            generatorApi = container "Generator API" "Handles RAG queries via openkb serve sidecars. Handles document deletion: soft-delete DB row, remove summary blob, rebuild index." "Python 3.12 / FastAPI 0.137 — :8001" {
+            generatorApi = container "Generator API" "Per-request RAG queries: syncs wiki blobs to scratch dir, spawns openkb serve sidecar, queries, tears down. Also handles document deletion: soft-delete row, delete summary blob, rebuild index.md." "Python 3.12 / FastAPI 0.137 — :8001" {
                 tags "AppContainer"
             }
 
-            ingestScript = container "Ingest Script" "One-shot script that registers KBs and documents directly in Postgres and enqueues compiler jobs. Uses tenacity + Semaphore(3) to avoid OpenAI 429 errors." "Python 3.12 / SQLAlchemy asyncpg" {
+            serveSidecar = container "openkb Serve Sidecar" "Ephemeral openkb serve subprocess spawned per query request. Loads wiki from scratch dir, answers the question, then exits. Managed entirely within a single request lifecycle." "openkb-core CLI (ephemeral, per-request)" {
+                tags "SidecarContainer"
+            }
+
+            compilerWorker = container "Compiler Worker" "Polls Postgres job queue (SKIP LOCKED). Spawns an ephemeral openkb compile sidecar per document. Recovers stale jobs on startup." "Python 3.12 asyncio" {
+                tags "AppContainer"
+            }
+
+            compileSidecar = container "openkb Compile Sidecar" "Ephemeral openkb compile subprocess spawned per document. Downloads source blob, calls OpenAI, uploads compiled wiki blobs (summaries/, concepts/, entities/, index.md), then exits." "openkb-core CLI (ephemeral, per-job)" {
+                tags "SidecarContainer"
+            }
+
+            ingestScript = container "Ingest Script" "One-shot script (ingest_marketing_kb.py). Uploads source files to Blob Storage, writes KB and document rows directly to Postgres, enqueues compiler jobs. Semaphore(3) + tenacity retries for resilience." "Python 3.12 / SQLAlchemy asyncpg / Azure Blob SDK" {
                 tags "ScriptContainer"
             }
 
-            compilerWorker = container "Compiler Worker" "Polls the Postgres job queue with SKIP LOCKED and spawns an ephemeral openkb compile sidecar per document." "Python 3.12 asyncio" {
-                tags "AppContainer"
-            }
-
-            sidecarPool = container "Sidecar Pool" "Maintains one persistent openkb serve process per active KB (lazy start, reused across requests). Lives inside the Generator API process." "Python 3.12 / openkb-core (SidecarPool)" {
-                tags "SidecarContainer"
-            }
-
-            compileSidecar = container "Compile Sidecar" "Short-lived openkb compile subprocess spawned per document. Calls OpenAI, writes wiki blobs, then exits." "openkb-core CLI (ephemeral)" {
-                tags "SidecarContainer"
-            }
-
-            postgres = container "PostgreSQL" "Stores knowledge base metadata, document records with soft-delete, and the compiler job queue." "PostgreSQL 16" {
+            postgres = container "PostgreSQL" "Stores knowledge_bases, documents (with soft-delete), compiler_jobs queue, and wiki_pages metadata." "PostgreSQL 16" {
                 tags "StorageContainer"
             }
 
-            blobStorage = container "Blob Storage" "Stores compiled wiki artefacts per KB: summaries/, concepts/, entities/, index.md." "Azure Blob Storage (Azurite locally)" {
+            blobStorage = container "Blob Storage" "Two roles: (1) source documents uploaded by ingest script; (2) compiled wiki artefacts (wiki/summaries/, wiki/concepts/, wiki/entities/, wiki/index.md) per KB container." "Azure Blob Storage (Azurite locally)" {
                 tags "StorageContainer"
             }
         }
@@ -54,31 +54,30 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
         # ── External actor flows ──────────────────────────────────────────────
         consumer -> aiHost "Queries a knowledge base in natural language"
         developer -> openkb.ingestScript "Runs to seed a knowledge base with source documents"
-        developer -> openkb.generatorApi "Deletes documents via REST API" "HTTP DELETE"
+        developer -> openkb.generatorApi "Deletes documents via REST API" "HTTP DELETE /kbs/{id}/documents/{doc_id}"
 
         # ── AI host → MCP Server ──────────────────────────────────────────────
-        aiHost -> openkb.mcpServer "MCP Streamable HTTP  /{kb_slug}/mcp" "HTTP"
+        aiHost -> openkb.mcpServer "MCP Streamable HTTP /{kb_slug}/mcp" "HTTP"
 
         # ── MCP Server → Generator API ────────────────────────────────────────
-        openkb.mcpServer -> openkb.generatorApi "Forwards ask tool call" "HTTP  POST /kbs/{id}/query"
+        openkb.mcpServer -> openkb.generatorApi "Forwards ask tool call" "HTTP POST /kbs/{id}/query"
+        openkb.mcpServer -> openkb.postgres "Resolves KB slug to UUID; checks compiled docs exist" "SQLAlchemy asyncpg"
 
-        # ── Generator API internals ───────────────────────────────────────────
-        openkb.generatorApi -> openkb.sidecarPool "Routes query to active sidecar" "in-process"
-        openkb.generatorApi -> openkb.postgres "Resolves KB and document records; soft-deletes on removal" "SQLAlchemy asyncpg"
-        openkb.generatorApi -> openkb.blobStorage "Deletes summary blob and rebuilds index on document removal" "Azure Blob SDK"
-
-        # ── Sidecar Pool ──────────────────────────────────────────────────────
-        openkb.sidecarPool -> openkb.blobStorage "Reads wiki index and summaries for RAG" "Azure Blob SDK"
+        # ── Generator API ─────────────────────────────────────────────────────
+        openkb.generatorApi -> openkb.postgres "Validates KB and document records; soft-deletes document on removal" "SQLAlchemy asyncpg"
+        openkb.generatorApi -> openkb.blobStorage "Syncs wiki blobs to scratch dir (query); deletes summary blob and rebuilds index.md (delete)" "Azure Blob SDK"
+        openkb.generatorApi -> openkb.serveSidecar "Spawns per-request subprocess; sends query; tears down" "subprocess stdio"
 
         # ── Ingest Script ─────────────────────────────────────────────────────
-        openkb.ingestScript -> openkb.postgres "Writes KB and document records; enqueues compiler jobs" "SQLAlchemy asyncpg"
+        openkb.ingestScript -> openkb.blobStorage "Uploads source document files" "Azure Blob SDK"
+        openkb.ingestScript -> openkb.postgres "Writes KB row, document rows, enqueues compiler_jobs" "SQLAlchemy asyncpg"
 
         # ── Compiler Worker ───────────────────────────────────────────────────
-        openkb.compilerWorker -> openkb.postgres "Claims compiler jobs (DELETE … RETURNING, SKIP LOCKED)" "SQLAlchemy asyncpg"
+        openkb.compilerWorker -> openkb.postgres "Claims jobs atomically (DELETE … RETURNING, SKIP LOCKED); updates document status" "SQLAlchemy asyncpg"
         openkb.compilerWorker -> openkb.compileSidecar "Spawns per-document compilation subprocess" "subprocess stdio"
 
         # ── Compile Sidecar ───────────────────────────────────────────────────
-        openkb.compileSidecar -> openkb.blobStorage "Uploads compiled summaries, concepts, entities, index" "Azure Blob SDK"
+        openkb.compileSidecar -> openkb.blobStorage "Downloads source doc; uploads compiled wiki blobs" "Azure Blob SDK"
         openkb.compileSidecar -> openai "LLM calls for summarisation and embedding" "HTTPS"
     }
 
