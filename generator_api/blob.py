@@ -4,7 +4,7 @@ import logging
 import re
 from pathlib import Path
 
-from azure.core.exceptions import AzureError
+from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.storage.blob.aio import BlobServiceClient
 
 from generator_api.exceptions import BlobSyncError
@@ -92,6 +92,60 @@ def rebuild_index_md(wiki_dir: Path) -> None:
         counts["Entities"],
         counts["Explorations"],
     )
+
+
+async def delete_summary_blob(
+    connection_string: str,
+    container: str,
+    doc_slug: str,
+) -> None:
+    """Delete the summary blob for *doc_slug* from *container*.
+
+    The blob ``wiki/summaries/{doc_slug}.md`` is removed.  If it is already
+    absent, the error is swallowed silently (idempotent).  Any other Azure
+    SDK error is wrapped in :exc:`BlobSyncError`.
+
+    Args:
+        connection_string: Azure Blob Storage connection string.
+        container: Container name (e.g. ``kb-<uuid>``).
+        doc_slug: Document slug used as the blob filename stem.
+    """
+    blob_name = f"wiki/summaries/{doc_slug}.md"
+    try:
+        async with BlobServiceClient.from_connection_string(connection_string) as svc:
+            blob_client = svc.get_container_client(container).get_blob_client(blob_name)
+            await blob_client.delete_blob()
+            logger.debug("Deleted summary blob %s/%s", container, blob_name)
+    except ResourceNotFoundError:
+        logger.debug("Summary blob %s/%s already absent — skipping", container, blob_name)
+    except AzureError as exc:
+        raise BlobSyncError(f"Failed to delete blob {container}/{blob_name}: {exc}") from exc
+
+
+async def upload_index_to_blob(
+    connection_string: str,
+    container: str,
+    index_path: Path,
+) -> None:
+    """Upload a rebuilt ``index.md`` to ``wiki/index.md`` in *container*.
+
+    Args:
+        connection_string: Azure Blob Storage connection string.
+        container: Container name (e.g. ``kb-<uuid>``).
+        index_path: Local :class:`~pathlib.Path` to the rebuilt index file.
+
+    Raises:
+        BlobSyncError: If the upload fails for any reason.
+    """
+    blob_name = "wiki/index.md"
+    content = index_path.read_text(encoding="utf-8")
+    try:
+        async with BlobServiceClient.from_connection_string(connection_string) as svc:
+            blob_client = svc.get_container_client(container).get_blob_client(blob_name)
+            await blob_client.upload_blob(content, overwrite=True)
+            logger.debug("Uploaded index to %s/%s", container, blob_name)
+    except AzureError as exc:
+        raise BlobSyncError(f"Failed to upload index to {container}/{blob_name}: {exc}") from exc
 
 
 async def check_azurite(connection_string: str) -> str:
