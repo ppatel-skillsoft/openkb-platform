@@ -34,7 +34,7 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
                 tags "AppContainer"
             }
 
-            compileSidecar = container "openkb Compile Sidecar" "Ephemeral openkb compile subprocess spawned per document. Downloads source blob, calls OpenAI, uploads compiled wiki blobs (summaries/, concepts/, entities/, index.md), then exits." "openkb-core CLI (ephemeral, per-job)" {
+            compileSidecar = container "openkb Compile Sidecar" "Ephemeral openkb compile subprocess spawned per document. Downloads source blob, calls OpenAI, uploads compiled wiki blobs (summaries/, concepts/, entities/, index.md), then exits." "openkb-core HTTP API server (uvicorn, ephemeral per job)" {
                 tags "SidecarContainer"
             }
 
