@@ -30,3 +30,9 @@ class SidecarStartError(Exception):
 
 class SidecarQueryError(Exception):
     """Raised when the sidecar returns a non-2xx response."""
+
+
+class SidecarCrashedError(Exception):
+    def __init__(self, kb_id: str) -> None:
+        super().__init__(f"Sidecar for KB {kb_id} crashed unexpectedly")
+        self.kb_id = kb_id

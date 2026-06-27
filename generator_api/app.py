@@ -1,3 +1,5 @@
+"""FastAPI application factory for the Generator API."""
+
 from __future__ import annotations
 
 import asyncio
@@ -20,6 +22,7 @@ from generator_api.exceptions import (
     SidecarStartError,
 )
 from generator_api.models import HealthResponse
+from generator_api.pool import SidecarPool
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +44,28 @@ async def _lifespan(app: FastAPI):
     if az_status != "ok":
         raise RuntimeError(f"Azurite unreachable at startup: {az_status}")
 
+    pool = SidecarPool(settings)
+    app.state.pool = pool
+
+    eviction_task = asyncio.create_task(pool.evict_idle_loop())
+
     logger.info("Generator API v%s starting — all dependencies reachable", __version__)
     yield
-    logger.info("Generator API shutting down")
+
+    # ── Graceful shutdown ────────────────────────────────────────────────────
+    if settings.prewarm_on_startup:
+        # Pre-warm runs as a background task after yield; cancel if still running
+        pass
+
+    logger.info("Generator API shutting down — terminating all sidecars")
+    eviction_task.cancel()
+    try:
+        await eviction_task
+    except asyncio.CancelledError:
+        pass
+    await pool.shutdown()
+
+    logger.info("Generator API shutdown complete")
 
 
 def create_app() -> FastAPI:
@@ -52,7 +74,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="OpenKB Generator API",
         version=__version__,
-        description="Query proxy: syncs wiki from Blob Storage and returns grounded answers.",
+        description="Query proxy: serves grounded answers from persistent KB sidecars.",
         lifespan=_lifespan,
     )
 
@@ -97,18 +119,24 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(SidecarStartError)
     async def _sidecar_start(request: Request, exc: SidecarStartError) -> JSONResponse:
-        return JSONResponse(status_code=502, content={"detail": f"Sidecar failed to start: {exc}"})
+        return JSONResponse(
+            status_code=502, content={"detail": f"Sidecar failed to start: {exc}"}
+        )
 
     @app.exception_handler(SidecarQueryError)
     async def _sidecar_query(request: Request, exc: SidecarQueryError) -> JSONResponse:
-        return JSONResponse(status_code=502, content={"detail": f"Sidecar error: {exc}"})
+        return JSONResponse(
+            status_code=502, content={"detail": f"Sidecar error: {exc}"}
+        )
 
     @app.exception_handler(asyncio.TimeoutError)
     async def _timeout(request: Request, exc: asyncio.TimeoutError) -> JSONResponse:
         settings = get_settings()
         return JSONResponse(
             status_code=504,
-            content={"detail": f"Query timed out after {settings.generator_request_timeout}s"},
+            content={
+                "detail": f"Query timed out after {settings.generator_request_timeout}s"
+            },
         )
 
     return app

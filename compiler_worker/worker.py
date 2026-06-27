@@ -58,7 +58,9 @@ class WorkerLoop:
                 async with get_session() as session:
                     await process_job(job, self._config, session, blob_client)
             except Exception:
-                logger.exception("Unhandled error processing job %s — worker continues", job.job_id)
+                logger.exception(
+                    "Unhandled error processing job %s — worker continues", job.job_id
+                )
 
         logger.info("Worker shutdown complete")
 

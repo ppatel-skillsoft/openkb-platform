@@ -4,6 +4,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport
 
@@ -16,6 +17,22 @@ os.environ.setdefault(
     "AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/"
     "K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1",
 )
+
+
+@pytest.fixture()
+def mock_pool() -> MagicMock:
+    from generator_api.pool import SidecarPool
+    from generator_api.sidecar import SidecarProcess
+
+    pool = MagicMock(spec=SidecarPool)
+    mock_sidecar = MagicMock(spec=SidecarProcess)
+    mock_sidecar.query.return_value = ("Test answer", [], 42)
+    pool.get_or_start = AsyncMock(return_value=mock_sidecar)
+    pool.update_last_used = MagicMock()
+    pool.invalidate = MagicMock()
+    pool.shutdown = AsyncMock()
+    pool.evict_idle_loop = AsyncMock()
+    return pool
 
 
 @pytest_asyncio.fixture
@@ -35,6 +52,7 @@ async def client():
     mock_settings.azure_storage_connection_string = "fake-conn-str"
     mock_settings.llm_api_key = ""
     mock_settings.generator_request_timeout = 30
+    mock_settings.prewarm_on_startup = False
 
     async def _fake_db():
         yield AsyncMock()
@@ -53,3 +71,4 @@ async def client():
             yield c
 
     app.dependency_overrides.clear()
+
