@@ -8,7 +8,7 @@ import logging
 import shutil
 import time
 
-from generator_api.blob import rebuild_index_md, sync_wiki_tree, upload_index_to_blob
+from generator_api.blob import sync_wiki_tree
 from generator_api.config import Settings
 from generator_api.exceptions import SidecarCrashedError
 from generator_api.sidecar import SidecarProcess
@@ -22,6 +22,7 @@ class _SidecarEntry:
     lock: asyncio.Lock
     stale: bool = False
     last_used_at: float = dataclasses.field(default_factory=time.monotonic)
+    started_at: float = dataclasses.field(default_factory=time.time)
 
 
 class SidecarPool:
@@ -130,7 +131,13 @@ class SidecarPool:
                     "Error stopping sidecar for kb_id=%s during shutdown", kb_id
                 )
 
-        logger.info("SidecarPool shut down (%d sidecars stopped)", len(entries))
+    def get_registry_snapshot(self) -> dict[str, float]:
+        """Return a snapshot of {kb_id: started_at} for all active sidecars.
+
+        Used by the freshness-check loop in app.py to detect when a new
+        compilation has landed in blob storage since the sidecar last started.
+        """
+        return {kb_id: entry.started_at for kb_id, entry in self._registry.items()}
 
     async def _evict_idle(self) -> None:
         """Stop sidecars idle longer than ``sidecar_idle_ttl_seconds``."""
@@ -200,8 +207,7 @@ class SidecarPool:
             timeout=self._settings.sidecar_startup_timeout,
         )
 
-        # Start sidecar subprocess and send /kb/init (which scaffolds .openkb/
-        # and writes the empty INDEX_SEED to wiki/index.md).
+        # Start sidecar subprocess and send /kb/init.
         await asyncio.to_thread(
             entry.process.start,
             scratch_dir,
@@ -211,20 +217,7 @@ class SidecarPool:
         )
         await asyncio.to_thread(entry.process.init, kb_slug)
 
-        # Rebuild the aggregate index.md AFTER init — /kb/init writes INDEX_SEED
-        # (empty template) because .openkb/ is not synced from blob storage.
-        # Rebuilding here ensures the sidecar sees all compiled wiki pages.
-        wiki_dir = scratch_dir / kb_slug / "wiki"
-        if wiki_dir.is_dir():
-            rebuild_index_md(wiki_dir)
-            # Write the rebuilt index back to blob storage so it persists
-            # across container restarts and is visible in storage explorers.
-            await upload_index_to_blob(
-                self._settings.azure_storage_connection_string,
-                container,
-                wiki_dir,
-            )
-
+        entry.started_at = time.time()
         logger.info("Sidecar ready for kb_id=%s on port %s", kb_id, entry.process._port)
 
     async def _stop_entry(

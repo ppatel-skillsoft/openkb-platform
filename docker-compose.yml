@@ -122,8 +122,6 @@ services:
       QUEUE_BACKEND: "postgres"
       LOG_LEVEL: "INFO"
       COMPILER_WORKER_SCRATCH_ROOT: "/scratch"
-      # URL for fire-and-forget invalidation notifications after document compilation
-      GENERATOR_API_URL: "http://generator-api:8001"
     volumes:
       - compiler_scratch:/scratch
     depends_on:
@@ -152,7 +150,6 @@ services:
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-openkb}:${POSTGRES_PASSWORD:-openkb}@postgres:5432/${POSTGRES_DB:-openkb}"
       AZURE_STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1"
       AZURE_KB_CONTAINER: "openkb"
-      GENERATOR_API_URL: "http://generator-api:8001"
       QUEUE_BACKEND: "postgres"
       COMPILER_SCRATCH_ROOT: "/scratch"
     volumes:

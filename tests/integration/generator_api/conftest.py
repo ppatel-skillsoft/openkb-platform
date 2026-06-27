@@ -32,6 +32,7 @@ def mock_pool() -> MagicMock:
     pool.invalidate = MagicMock()
     pool.shutdown = AsyncMock()
     pool.evict_idle_loop = AsyncMock()
+    pool.get_registry_snapshot = MagicMock(return_value={})
     return pool
 
 
@@ -64,6 +65,8 @@ async def client():
         patch("generator_api.app.check_postgres", new=AsyncMock(return_value="ok")),
         patch("generator_api.app.check_azurite", new=AsyncMock(return_value="ok")),
         patch("generator_api.app.get_settings", return_value=mock_settings),
+        patch("generator_api.app._get_session_factory", return_value=None),
+        patch("generator_api.app._freshness_check_loop", new=AsyncMock()),
     ):
         async with httpx.AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
