@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import tempfile
 import time
 from pathlib import Path
 
-import httpx
 from azure.core.exceptions import ResourceNotFoundError as AzureNotFoundError
 from sqlalchemy import select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -184,18 +184,10 @@ async def process_job(
             final_status.token_cost,
         )
 
-        # Fire-and-forget: notify generator-api to mark this KB's sidecar stale.
-        # Errors are logged as warnings and never cause the job to fail.
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    f"{config.generator_api_url}/kbs/{job.kb_id}/invalidate",
-                    json={"document_id": str(job.document_id)},
-                )
-        except Exception:
-            logger.warning(
-                "Failed to notify generator_api of invalidation for kb_id=%s", job.kb_id
-            )
+        # Rebuild the aggregate index.md in blob storage so it covers all
+        # compiled documents for this KB — not just the current job.
+        # This is the single place responsible for keeping the index correct.
+        await asyncio.to_thread(blob_client.rebuild_and_upload_index, container)
 
     except BlobNotFoundError:
         await _mark_failed(

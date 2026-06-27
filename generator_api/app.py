@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from generator_api import __version__
 from generator_api.blob import check_azurite
 from generator_api.config import get_settings
-from generator_api.db import check_postgres
+from generator_api.db import check_postgres, _get_session_factory
 from generator_api.exceptions import (
     BlobSyncError,
     DocumentNotFoundError,
@@ -25,6 +25,56 @@ from generator_api.models import HealthResponse
 from generator_api.pool import SidecarPool
 
 logger = logging.getLogger(__name__)
+
+_FRESHNESS_CHECK_INTERVAL = 60  # seconds
+
+
+async def _freshness_check_loop(pool: SidecarPool) -> None:
+    """Invalidate any sidecar whose KB was compiled after the sidecar last started.
+
+    Runs every 60 seconds. For each active KB in the pool, queries Postgres for
+    the most recent successful compilation timestamp. If a newer compilation has
+    landed since the sidecar started, the sidecar is evicted so the next query
+    cold-starts with the latest wiki content already in blob storage.
+
+    No index rebuilding happens here — the compiler worker now owns that.
+    """
+    from sqlalchemy import text
+
+    session_factory = _get_session_factory()
+
+    while True:
+        try:
+            await asyncio.sleep(_FRESHNESS_CHECK_INTERVAL)
+            snapshot = pool.get_registry_snapshot()
+            if not snapshot:
+                continue
+            async with session_factory() as session:
+                for kb_id, started_at in snapshot.items():
+                    row = await session.execute(
+                        text(
+                            "SELECT MAX(last_compiled_at) FROM documents"
+                            " WHERE kb_id = :kb_id AND status = 'complete'"
+                        ),
+                        {"kb_id": kb_id},
+                    )
+                    max_compiled_at = row.scalar()
+                    if max_compiled_at is None:
+                        continue
+                    compiled_ts: float = max_compiled_at.timestamp()
+                    if compiled_ts > started_at:
+                        logger.info(
+                            "KB %s has new compilations (last=%.0f sidecar_start=%.0f) — invalidating",
+                            kb_id,
+                            compiled_ts,
+                            started_at,
+                        )
+                        pool.invalidate(kb_id)
+        except asyncio.CancelledError:
+            logger.info("_freshness_check_loop cancelled — exiting")
+            return
+        except Exception:
+            logger.exception("Error in _freshness_check_loop — will retry")
 
 
 @asynccontextmanager
@@ -48,6 +98,7 @@ async def _lifespan(app: FastAPI):
     app.state.pool = pool
 
     eviction_task = asyncio.create_task(pool.evict_idle_loop())
+    freshness_task = asyncio.create_task(_freshness_check_loop(pool))
 
     logger.info("Generator API v%s starting — all dependencies reachable", __version__)
     yield
@@ -59,8 +110,9 @@ async def _lifespan(app: FastAPI):
 
     logger.info("Generator API shutting down — terminating all sidecars")
     eviction_task.cancel()
+    freshness_task.cancel()
     try:
-        await eviction_task
+        await asyncio.gather(eviction_task, freshness_task, return_exceptions=True)
     except asyncio.CancelledError:
         pass
     await pool.shutdown()

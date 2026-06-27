@@ -22,19 +22,19 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
                 tags "AppContainer"
             }
 
-            generatorApi = container "Generator API" "Three routes: POST /query (delegates to SidecarPool), POST /invalidate (marks pool entry stale), DELETE /documents (soft-delete + summary blob removal + index rebuild). Manages pool lifecycle at startup." "Python 3.12 / FastAPI 0.137 — :8001" {
+            generatorApi = container "Generator API" "Two routes: POST /query (delegates to SidecarPool) and DELETE /documents (soft-delete + summary blob removal + index rebuild). Background freshness loop polls Postgres every 60 s and invalidates stale sidecars automatically. Manages pool lifecycle at startup." "Python 3.12 / FastAPI 0.137 — :8001" {
                 tags "AppContainer"
             }
 
-            sidecarPool = container "Sidecar Pool" "Persistent pool of openkb serve processes — one per active KB. Cold start: syncs wiki blobs, starts sidecar, rebuilds and uploads index.md. Warm path: reuses running sidecar, no blob sync. Idle eviction after 30 min. Crash detection and transparent restart." "Python 3.12 / openkb-core (SidecarPool in pool.py)" {
+            sidecarPool = container "Sidecar Pool" "Persistent pool of openkb serve processes — one per active KB. Cold start: syncs wiki blobs from Blob Storage and starts sidecar. Warm path: reuses running sidecar, no blob sync. Idle eviction after 30 min. Crash detection and transparent restart." "Python 3.12 / openkb-core (SidecarPool in pool.py)" {
                 tags "SidecarContainer"
             }
 
-            compilerWorker = container "Compiler Worker" "Polls Postgres job queue (SKIP LOCKED). Spawns an ephemeral openkb compile sidecar per document. Calls POST /invalidate on Generator API after each job so the pool reloads fresh blobs on next query." "Python 3.12 asyncio" {
+            compilerWorker = container "Compiler Worker" "Polls Postgres job queue (SKIP LOCKED). Spawns an ephemeral openkb compile sidecar per document. After compilation, rebuilds and uploads the aggregate wiki/index.md to Blob Storage — single source of truth for the index." "Python 3.12 asyncio" {
                 tags "AppContainer"
             }
 
-            compileSidecar = container "openkb Compile Sidecar" "Ephemeral openkb compile subprocess spawned per document. Downloads source blob, calls OpenAI, uploads compiled wiki blobs (summaries/, concepts/, entities/, index.md), then exits." "openkb-core HTTP API server (uvicorn, ephemeral per job)" {
+            compileSidecar = container "openkb Compile Sidecar" "Ephemeral openkb compile subprocess spawned per document. Downloads source blob, calls OpenAI, uploads compiled wiki blobs (summaries/, concepts/, entities/), then exits." "openkb-core HTTP API server (uvicorn, ephemeral per job)" {
                 tags "SidecarContainer"
             }
 
@@ -64,12 +64,12 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
         openkb.mcpServer -> openkb.postgres "Resolves KB slug to UUID; checks compiled docs exist" "SQLAlchemy asyncpg"
 
         # Generator API to Sidecar Pool
-        openkb.generatorApi -> openkb.sidecarPool "get_or_start() on query; invalidate() on POST /invalidate or document delete" "in-process"
-        openkb.generatorApi -> openkb.postgres "Validates KB and document records; soft-deletes document on removal" "SQLAlchemy asyncpg"
+        openkb.generatorApi -> openkb.sidecarPool "get_or_start() on query; invalidate() via background freshness loop or document delete" "in-process"
+        openkb.generatorApi -> openkb.postgres "Validates KB and document records; polls MAX(last_compiled_at) every 60 s for freshness; soft-deletes document on removal" "SQLAlchemy asyncpg"
         openkb.generatorApi -> openkb.blobStorage "Deletes summary blob and rebuilds index.md on document removal" "Azure Blob SDK"
 
         # Sidecar Pool (cold start only)
-        openkb.sidecarPool -> openkb.blobStorage "Cold start only: syncs wiki blobs to scratch dir; uploads rebuilt index.md" "Azure Blob SDK"
+        openkb.sidecarPool -> openkb.blobStorage "Cold start only: syncs wiki blobs to scratch dir" "Azure Blob SDK"
 
         # Ingest Script
         openkb.ingestScript -> openkb.blobStorage "Uploads source document files" "Azure Blob SDK"
@@ -78,10 +78,10 @@ workspace "OpenKB Platform" "Level 2 Container diagram for the OpenKB Platform" 
         # Compiler Worker
         openkb.compilerWorker -> openkb.postgres "Claims jobs atomically (DELETE RETURNING, SKIP LOCKED); updates document status" "SQLAlchemy asyncpg"
         openkb.compilerWorker -> openkb.compileSidecar "Spawns per-document compilation subprocess" "subprocess stdio"
-        openkb.compilerWorker -> openkb.generatorApi "POST /kbs/{id}/invalidate after compilation (fire-and-forget)" "HTTP"
 
         # Compile Sidecar
-        openkb.compileSidecar -> openkb.blobStorage "Downloads source doc; uploads compiled wiki blobs" "Azure Blob SDK"
+        openkb.compileSidecar -> openkb.blobStorage "Downloads source doc; uploads compiled wiki blobs (summaries/, concepts/, entities/)" "Azure Blob SDK"
+        openkb.compilerWorker -> openkb.blobStorage "After each compilation: rebuilds and uploads aggregate wiki/index.md" "Azure Blob SDK"
         openkb.compileSidecar -> openai "LLM calls for summarisation and embedding" "HTTPS"
     }
 

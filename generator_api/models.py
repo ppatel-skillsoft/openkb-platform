@@ -5,12 +5,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, field_validator
 
 
-class InvalidateRequest(BaseModel):
-    """Optional body for POST /kbs/{kb_id}/invalidate — used for logging/tracing only."""
-
-    document_id: str | None = None
-
-
 class QueryRequest(BaseModel):
     question: str
     save: bool = False
