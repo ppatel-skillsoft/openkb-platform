@@ -1,56 +1,75 @@
 # OpenKB Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-06-27
+Last updated: 2026-06-27
 
 ## Active Technologies
 
 - **Language**: Python 3.12 — `from __future__ import annotations` in every module
-- **CLI**: Click 8.4.0 (`openkb/cli.py`) — all commands use `@cli.command()` + `@click.pass_context`
-- **LLM routing**: LiteLLM 1.87.2 + OpenAI Agents SDK 0.17.3
-- **HTTP API** (feature `001-fastapi-http-api`): FastAPI 0.137.2 + uvicorn[standard] 0.49.0; Pydantic v2 required
-- **Storage backends**: `LocalStorageBackend` (pathlib + portalocker); `AzureBlobStorageBackend` (azure-storage-blob 12.30.0 async)
-- **Testing**: pytest 9.0.3 + pytest-asyncio 1.3.0 + httpx 0.28.1 (API tests)
-- **MCP Server** (feature `009-fastmcp-kb-server`): fastmcp==3.4.2 (Streamable HTTP transport); `mcp_server/` package; lifespan pattern with httpx.AsyncClient; `mcp.http_app()` ASGI factory served by uvicorn on port 8002
-- **Ingestion retry**: tenacity==9.1.2 — exponential backoff (base 2s, max 60s, 5 retries) for OpenAI 429 errors; asyncio.Semaphore(3) for concurrency ceiling
+- **HTTP API**: FastAPI 0.137.2 + uvicorn[standard] 0.49.0; Pydantic v2 required
+- **Database**: SQLAlchemy 2.0 (asyncio) + asyncpg 0.30.0 + Postgres
+- **Blob Storage**: azure-storage-blob 12.30.0 (async) — Azurite locally
+- **MCP Server**: fastmcp==3.4.2 (Streamable HTTP transport); per-KB `/{kb_slug}/mcp` routing
+- **Testing**: pytest 9.0.3 + pytest-asyncio 1.3.0 + httpx 0.28.1 (ASGITransport for integration tests)
+- **Ingestion retry**: tenacity==9.1.2 — exponential backoff (base 2s, max 60s, 5 retries) for OpenAI 429 errors; `asyncio.Semaphore(3)` concurrency ceiling
 
 ## Project Structure
 
 ```text
-openkb/
-├── cli.py               # all Click commands; thin adapters over services/
-├── config.py            # load_config(), save_config(), DEFAULT_CONFIG
-├── locks.py             # kb_ingest_lock(), kb_read_lock(), atomic_write_*
-├── state.py             # HashRegistry
-├── schema.py            # PAGE_CONTENT_DIRS, AGENTS_MD, INDEX_SEED
-├── converter.py         # convert_document() → ConvertResult
-├── url_ingest.py        # fetch_url_to_raw(), looks_like_url()
-├── storage/             # NEW: StorageBackend ABC + Local/Azure implementations
-├── services/            # NEW: service_init_kb, service_add_document, etc.
-└── api/                 # NEW: FastAPI app, Pydantic models, route handlers
+generator_api/
+├── app.py              FastAPI app factory; exception handlers (KBNotFoundError, DocumentNotFoundError, ...)
+├── router.py           Route handlers — POST /kbs/{kb_id}/query, DELETE /kbs/{kb_id}/documents/{doc_id}
+├── service.py          Business logic — service_delete_document()
+├── blob.py             Blob helpers — sync_wiki_tree, rebuild_index_md, delete_summary_blob, upload_index_to_blob
+├── exceptions.py       KBNotFoundError, DocumentNotFoundError, BlobSyncError, SidecarStartError, SidecarQueryError
+├── config.py           Settings (pydantic-settings); get_settings() lru_cache
+├── db.py               get_db() async session dependency; check_postgres()
+├── pool.py             SidecarPool — persistent per-KB sidecar pool
+└── sidecar.py          SidecarProcess — subprocess lifecycle
+
+compiler_worker/
+├── worker.py           Main loop — polls Postgres queue with SKIP LOCKED
+├── job.py              Per-document compilation job
+├── queue_client.py     Atomic job claim via DELETE … RETURNING
+└── sidecar.py          Compiler sidecar subprocess wrapper
+
+mcp_server/
+├── app.py              Root ASGI app — GET /health + KBDispatcher fallthrough
+├── dispatcher.py       KBDispatcher — lazy per-KB FastMCP creation; _ManagedApp lifespan wrapper
+├── config.py           Settings — generator_api_url, query_timeout_s, mcp_host, mcp_port
+├── db.py               check_postgres() for health endpoint
+└── exceptions.py       KBNotFoundError, KBNotReadyError, GeneratorAPIError
+
+scripts/
+└── ingest_marketing_kb.py  One-shot ingestion with rate-limit protection
 
 tests/
-├── unit/                # NEW: storage backends, service functions
-├── integration/         # NEW: API route handlers (httpx.AsyncClient + ASGITransport)
-└── contract/            # NEW: response schema assertions
+├── unit/               No live services — mock DB and blob
+│   ├── generator_api/  test_blob_helpers.py, test_service.py
+│   └── mcp_server/     test_dispatcher.py
+├── integration/        ASGITransport + httpx — no live services
+│   ├── generator_api/  test_delete_document.py
+│   └── mcp_server/     test_mcp_server_http.py
+└── isolation/          Requires full docker compose stack
 ```
 
 ## Commands
 
 ```bash
-# Run tests
-pytest
+# Run unit + integration tests (no live services needed)
+uv run pytest tests/unit/ tests/integration/ -v
 
-# Run tests for a specific module
-pytest tests/unit/test_storage_local.py -v
+# Run a specific test file
+uv run pytest tests/unit/generator_api/test_service.py -v
 
-# Install with API extras (required for openkb serve)
-uv run -- uv sync --extra api
+# Install all extras for local dev
+uv sync --extra dev --extra mcp
 
-# Start API server
-openkb serve --host 0.0.0.0 --port 8000
+# Start full local stack
+docker compose up -d
 
-# Lint (if configured)
-ruff check openkb/
+# Ingest marketing documents (marketing_kb/ dir must exist locally)
+uv run python scripts/ingest_marketing_kb.py --dry-run   # verify
+uv run python scripts/ingest_marketing_kb.py             # ingest
 ```
 
 ## Code Style
@@ -60,31 +79,29 @@ ruff check openkb/
 - Type-annotate all public functions; avoid `Any` except at genuine boundaries
 - All Pydantic models use v2 (`field_validator`, `model_config`)
 - Route handlers contain **zero** business logic — delegate entirely to service functions
-- Service functions raise custom exceptions (`KBNotFoundError`, `LLMError`, etc.) — never `HTTPException`
-- All production dependencies pinned to exact versions in `pyproject.toml` with rationale comments
+- Service functions raise custom exceptions (`KBNotFoundError`, `DocumentNotFoundError`, etc.) — never `HTTPException`
+- All production dependencies pinned to exact versions in `pyproject.toml`
 
-## Key Design Decisions (feature 001-fastapi-http-api)
+## Key Design Decisions (feature 009 — FastMCP KB server)
 
-- **StorageBackend abstraction**: `openkb/storage/base.py` ABC; `LocalStorageBackend` uses `pathlib` + `portalocker`; `AzureBlobStorageBackend` uses Azure Blob Lease for distributed locking
-- **Service layer**: `openkb/services/` — five async functions extracted from `cli.py`; return plain dataclasses (not Pydantic models)
-- **CLI-API bridge**: `LocalStorageBackend` exposes `.kb_dir` property for passing to path-based compiler functions; Azure backend uses `.local_working_dir()` async context manager (download → process → upload)
-- **Backend selection**: `OPENKB_STORAGE_BACKEND=local|azure` env var; no code changes required to switch
-- **Validation parity**: Pydantic `field_validator` in request models mirrors `_coerce_model`/`_coerce_language` from `cli.py`
-
-## Key Design Decisions (feature 009-fastmcp-kb-server)
-
-- **MCP server is a thin proxy**: all RAG/LLM logic stays in `generator-api`; `mcp_server/` only translates MCP tool calls to HTTP requests
-- **FastMCP 3.4.2 patterns**: `@lifespan` for `httpx.AsyncClient` singleton; `@mcp.custom_route("/health")` for Docker healthcheck; `mcp.http_app()` ASGI factory for uvicorn deployment
-- **Two tools only**: `ask_kb` (proxies to `generator-api`) and `list_kbs` (queries Postgres directly) — no write, compilation, or admin tools
-- **Streamable HTTP transport**: primary transport on port 8002; STDIO clients use `uvx fastmcp run http://localhost:8002/mcp` as a bridge
-- **Rate-limit strategy**: `tenacity` exponential backoff for 429/5xx + `asyncio.Semaphore(3)` + 200ms inter-submission delay in `scripts/ingest_marketing_kb.py`
+- **Per-KB routing**: `/{kb_slug}/mcp` — one FastMCP instance per KB; single `ask(question)` tool; no discovery overhead
+- **Slug not UUID**: URL uses the friendly KB name (e.g. `marketing-kb`), not the internal UUID; UUID is captured in closure and never exposed to the LLM
+- **`KBDispatcher`** (`mcp_server/dispatcher.py`): lazy per-KB FastMCP creation with `asyncio.Lock` cache; `_ManagedApp` wrapper drives the ASGI lifespan protocol as a background task before serving requests (required for FastMCP's `StreamableHTTPSessionManager`)
+- **Thin proxy**: all RAG/LLM logic stays in `generator_api`; `mcp_server` only translates MCP tool calls to HTTP requests via `httpx.AsyncClient` in the lifespan context
 - **`marketing_kb/` gitignored**: document content never committed; ingestion is a local-only one-shot setup step
+
+## Key Design Decisions (feature 011 — DELETE document endpoint)
+
+- **Zero LLM calls**: removal is: soft-delete DB row → delete `wiki/summaries/{slug}.md` blob → rebuild `index.md`
+- **Summary blob only**: concepts/entities blobs are left intact (cheap; may relate to other documents); only the uniquely-named summary blob is removed
+- **Idempotent**: second `DELETE` on an already-deleted doc returns `204` immediately without any storage ops
+- **`service_delete_document()`** (`generator_api/service.py`): owns all business logic; route handler is a thin dispatcher
+- **Empty-KB edge case**: if all documents are deleted, `sync_wiki_tree` raises `BlobSyncError("no blobs found")`; service writes a blank-section `index.md` instead of re-raising
 
 ## Recent Changes
 
-- 011-delete-document-endpoint: Added `DELETE /kbs/{kb_id}/documents/{doc_id}` — soft-delete + summary blob removal + index rebuild; zero LLM calls
-- 001-fastapi-http-api: Added StorageBackend abstraction, FastAPI service layer, `openkb serve` command
-- 009-fastmcp-kb-server: Added FastMCP 3.4.2 MCP server, ingestion script with rate-limit strategy, Docker Compose `mcp-server` service on port 8002
+- **011** — `DELETE /kbs/{kb_id}/documents/{doc_id}`: soft-delete + summary blob removal + index rebuild; zero LLM calls; `DocumentNotFoundError` → 404
+- **009** — FastMCP MCP server on port 8002; per-KB `/{kb_slug}/mcp` routing; single `ask` tool; `KBDispatcher` with lazy lifespan management
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

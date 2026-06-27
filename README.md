@@ -6,9 +6,9 @@ Service layer for running OpenKB at scale — multi-tenant Generator API, async 
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `generator_api` | 8001 | FastAPI service that accepts query requests and manages per-KB `openkb serve` sidecars |
+| `generator_api` | 8001 | FastAPI service — query proxy that manages per-KB `openkb serve` sidecars, and document lifecycle (delete) |
 | `compiler_worker` | — | Async worker that polls a Postgres job queue (SKIP LOCKED) and runs `openkb compile` per document |
-| `mcp_server` | 8002 | FastMCP server — exposes `ask_kb` and `list_kbs` tools for AI agents (Claude, Cursor, GitHub Copilot) |
+| `mcp_server` | 8002 | FastMCP server — per-KB `/{kb_slug}/mcp` endpoints, one `ask` tool per KB, for AI agents |
 | `openkb` sidecar | 8000 | One `openkb serve` process per active KB, spawned on demand by the generator API |
 
 The core `openkb` CLI and Python package lives in [openkb-core](https://github.com/ppatel-skillsoft/openkb-core), installed as a pip dependency from a pinned git tag.
@@ -26,44 +26,65 @@ docker compose up -d
 ```
 
 Services start on:
-- MCP Server: `http://localhost:8002/mcp`
+- MCP Server: `http://localhost:8002/{kb_slug}/mcp` (e.g. `http://localhost:8002/marketing-kb/mcp`)
 - Generator API: `http://localhost:8001`
-- OpenKB sidecar API: `http://localhost:8000`
 
 ## MCP Server
 
-The `mcp-server` service exposes two tools consumable by any MCP-compatible host:
+Each knowledge base gets its own MCP endpoint at `/{kb_slug}/mcp`. Connect your AI agent directly to the KB you want — no discovery step needed, no context bloat.
+
+The endpoint exposes a single tool:
 
 | Tool | Description |
 |------|-------------|
-| `ask_kb` | Ask a question against a specific knowledge base and get a grounded answer with citations |
-| `list_kbs` | List all available knowledge bases with document counts |
+| `ask` | Ask a natural-language question and get a grounded answer with citations from the knowledge base |
+
+The KB slug is the friendly name used when the knowledge base was initialised (e.g. `marketing-kb`). The endpoint is lazily created on first request and cached for subsequent requests.
 
 ### Claude Desktop configuration
 
 ```json
 {
   "mcpServers": {
-    "openkb": {
-      "url": "http://localhost:8002/mcp"
+    "marketing-kb": {
+      "url": "http://localhost:8002/marketing-kb/mcp"
     }
   }
 }
 ```
 
-### Cursor / VS Code configuration
+### Cursor / VS Code / GitHub Copilot configuration
 
-Add to `.cursor/mcp.json` or `.vscode/mcp.json`:
+Add to `.cursor/mcp.json`, `.vscode/mcp.json`, or `.github/copilot/mcp.json`:
 
 ```json
 {
   "servers": {
-    "openkb": {
-      "url": "http://localhost:8002/mcp"
+    "marketing-kb": {
+      "url": "http://localhost:8002/marketing-kb/mcp"
     }
   }
 }
 ```
+
+Replace `marketing-kb` with your KB slug. Add one entry per KB you want to expose.
+
+## Generator API
+
+### Query a knowledge base
+
+```
+POST /kbs/{kb_id}/query
+{"question": "What solutions does Skillsoft offer for AI governance?"}
+```
+
+### Delete a document
+
+```
+DELETE /kbs/{kb_id}/documents/{doc_id}
+```
+
+Removes the document without any LLM calls: soft-deletes the DB row, deletes the document's summary blob, and rebuilds `index.md` from remaining documents. Returns `204 No Content` (idempotent).
 
 ## Ingesting Documents
 
@@ -77,7 +98,9 @@ uv run python scripts/ingest_marketing_kb.py --dry-run
 uv run python scripts/ingest_marketing_kb.py
 ```
 
-The script uses `asyncio.Semaphore(3)` for parallel blob uploads and tenacity retry for transient Azure errors. Job enqueues are staggered with a 1 s delay to avoid OpenAI rate-limit bursts in the compiler-worker.
+The script uses `asyncio.Semaphore(3)` for parallel blob uploads and tenacity retry with exponential backoff for OpenAI rate limits (429). Job enqueues are staggered with a 200 ms delay.
+
+Documents are placed in `marketing_kb/` at the repo root — this directory is gitignored and never committed.
 
 ## Environment Variables
 
@@ -93,29 +116,38 @@ See `.env.example` for all required and optional variables. Key ones:
 ## Running Tests
 
 ```bash
-# Unit + integration tests
+# Unit + integration tests (no live services needed)
 uv run pytest tests/unit/ tests/integration/ -v
 
-# Isolation tests (requires services running)
+# Isolation tests (requires full docker compose stack)
 docker compose --profile test run --rm isolation-tests
 ```
 
-The isolation test suite validates:
-- Per-KB content isolation (no cross-contamination between knowledge bases)
-- Concurrent query correctness
-- Scratch directory isolation and cleanup
-- Process state isolation across sequential queries
+The isolation test suite validates per-KB content isolation, concurrent query correctness, scratch directory cleanup, and process state isolation.
 
 ## Project Structure
 
 ```
-compiler_worker/             Postgres queue consumer and document compilation pipeline
-generator_api/               FastAPI app, route handlers, sidecar lifecycle management
-mcp_server/                  FastMCP server with ask_kb and list_kbs tools
-scripts/ingest_marketing_kb.py  Ingest documents into the pipeline
-tests/isolation/             End-to-end isolation test suite
-docker-compose.yml           Full local stack
-specs/                       Feature specifications and implementation plans
+compiler_worker/        Postgres queue consumer and document compilation pipeline
+generator_api/
+├── app.py              FastAPI app factory, exception handlers
+├── router.py           Route handlers (query, delete document)
+├── service.py          Business logic (service_delete_document)
+├── blob.py             Blob storage helpers (sync, delete, upload index)
+├── exceptions.py       KBNotFoundError, DocumentNotFoundError, BlobSyncError, ...
+└── pool.py             Persistent sidecar pool
+mcp_server/
+├── app.py              Root ASGI app — /health + KBDispatcher
+├── dispatcher.py       Per-KB FastMCP routing (/{kb_slug}/mcp)
+└── config.py           Settings
+scripts/
+└── ingest_marketing_kb.py  Ingest documents with rate-limit protection
+tests/
+├── unit/               Unit tests (mock DB + blob)
+├── integration/        Integration tests (ASGITransport + httpx)
+└── isolation/          End-to-end isolation suite (requires live stack)
+specs/                  Feature specifications and implementation plans
+docker-compose.yml      Full local stack
 ```
 
 ## Related
